@@ -20,6 +20,8 @@ Held-out data is shown honestly: dev (many looks), confirm (one look), sealed (o
 
 What we claim is narrow: **parallel on-chain evaluation on Monad, and honest held-out scoring.** We do **not** claim that the colony finds better strategies than random search (see the benchmark below).
 
+![Who judges the agents: proposers suggest strategies, an independent contract evaluates them, and the Ledger keeps the evidence](docs/figures/01_architecture.svg)
+
 ## Status: what is real
 
 Measured on 2026-10-17. Numbers come from files in this repo; commands are in [monad-notes](docs/monad-notes.md) and [surfaces](docs/surfaces.md).
@@ -125,6 +127,8 @@ Four kinds of thing, kept apart on purpose: what **proposes**, what **judges**, 
   Measured on testnet: 100 of 100 smoke evaluations landed in 8 blocks ([monad-notes](docs/monad-notes.md)). The screen shows the measured number.
 - **Jev**, a System One model, predicts which candidates will win *before* the results exist; the prediction is logged on-chain and refused afterwards. Its authority is earned by calibration, never granted.
 
+![A ledger of hash-chained records: every submission, score and state change is kept as verifiable evidence](docs/figures/05_ledger.svg)
+
 ### Layers: effort goes where the evidence points
 
 Effort moves between layers by promotion, not by decree. Cheap looks first, rarer and costlier ones for the few that earn them.
@@ -135,6 +139,12 @@ Effort moves between layers by promotion, not by decree. Cheap looks first, rare
 | L1 confirm | the elite of each niche, one look each | one confirm evaluation | which elites generalise |
 | L2 sealed | the champion, once | one sealed look | what may be claimed |
 | Funding | agents *you* pick from the L1 survivors | test MON in escrow | steers which agents become parents of the next generation |
+
+![From many to few: broad exploration narrows to cautious validation](docs/figures/02_cascade.svg)
+
+_Counts in this figure are schematic, not measured Blockwise results._
+
+![Earning trust: each added gate raises the standard of evidence](docs/figures/04_promotion_ladder.svg)
 
 ### The map
 
@@ -177,6 +187,8 @@ landed in blocks  ▮▮▮▮▮▮▮▮▮   N evals in B blocks
 - counters: evaluations, blocks spanned, gas, Jev spend; and the Jev calibration meter, labelled *shadow* until it has earned more;
 - the funding panel: who is funded, by how much, and the virtual return, labelled as such.
 
+![A fair test: dev data is for search, confirm for confirmation, sealed for the claim, stress for diagnostics](docs/figures/03_data_roles.svg)
+
 ## Layout
 
 ```
@@ -216,7 +228,7 @@ Ranked next steps: [docs/roadmap.md](docs/roadmap.md).
 ## Acknowledgements
 
 The mechanisms of this colony, and the discipline around them (propose / judge / execute kept apart, look once at held-out data, compare every clever method with a cheaper one at equal budget),
-are adapted from [ants](https://github.com/p-to-q/ants) by the same author and from the Meta-Harness line of work. The idea of a typed, calibrated decision every block is
+are adapted from [ants](https://github.com/p-to-q/ants) by the same author and from the Meta-Harness line of work; the diagrams in [`docs/figures/`](docs/figures/) (rebuildable with `python docs/figures/make_figures.py`) adapt that project's figure layout. The idea of a typed, calibrated decision every block is
 [Jev Trader](https://github.com/jarrodwatts/jev-trader) (Jarrod Watts) on TypeSafe's Jev model. The ground it stands on is [Monad](https://www.monad.xyz).
 Blockwise is its own project and shares no code with any of them.
 

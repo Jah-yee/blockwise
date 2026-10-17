@@ -21,6 +21,8 @@ Blockwise 把一群小而便宜、会出错的 agent 放到潮水面前，由一
 
 "wise" 取两层意思：block-wise，一块一块地；也是审慎之意，这里的每一次裁决都出自一个无法被说服的东西。
 
+![谁在裁判这些 agent：提议者提出策略，独立的合约评估它们，账本留下证据](docs/figures/01_architecture.svg)
+
 ## 从这里开始
 
 | 我想 | 去 |
@@ -58,6 +60,8 @@ Blockwise 把一群小而便宜、会出错的 agent 放到潮水面前，由一
   这是 [monad-notes](docs/monad-notes.md) 里的假设 A1：**尚未实测**。屏幕上显示的是实测值。
 - **Jev**（System One 模型）在结果出现*之前*预测谁会赢，预测记在链上，结果出现后再记会被拒绝。它的权力靠校准度挣来，不是被授予的。
 
+![哈希链接的账本：每次提交、评分与状态变化都留作可核查的证据](docs/figures/05_ledger.svg)
+
 ### 层：精力跟着证据走
 
 精力靠"晋升"在层之间流动，不是预先指派。先做便宜的看，只让挣到资格的少数走到更稀少、更贵的那几次。
@@ -68,6 +72,12 @@ Blockwise 把一群小而便宜、会出错的 agent 放到潮水面前，由一
 | L1 确认 | 每个生态位的精英，各看一次 | 一次 confirm 评估 | 哪些精英能泛化 |
 | L2 封存 | 冠军，仅一次 | 一次 sealed 查看 | 可以主张什么 |
 | 资助 | *你*从 L1 幸存者里选的 agent | 托管中的测试币 | 影响哪些 agent 成为下一代的父代 |
+
+![从多到少：广泛尝试收窄为谨慎验证](docs/figures/02_cascade.svg)
+
+_图中数量仅为示意，不是 Blockwise 的实测结果。_
+
+![赢得信任：每多一道闸门，证据标准抬高一层](docs/figures/04_promotion_ladder.svg)
 
 ### 地图
 
@@ -106,6 +116,8 @@ Blockwise 把一群小而便宜、会出错的 agent 放到潮水面前，由一
 - 每代最优分数，对比同预算的随机搜索基线；
 - 计数器：评估数、跨越的区块数、gas、Jev 花费；以及 Jev 校准表，在它挣到更多之前标注为*影子*；
 - 资助面板：谁被资助、多少，以及虚拟收益，并如实标注。
+
+![一次公平的检验：dev 用于搜索，confirm 用于复核，sealed 用于主张，stress 只用于诊断](docs/figures/03_data_roles.svg)
 
 ## 验证
 
@@ -187,7 +199,7 @@ Monad 测试网：链 ID `10143`，公共 RPC `https://testnet-rpc.monad.xyz`，
 ## 致谢
 
 这群 agent 的机制，以及围绕它的纪律（提议 / 裁判 / 执行分开、对留出数据只看一次、每个聪明方法都要和同预算下更便宜的方法比较），
-改编自同一作者的 [ants](https://github.com/p-to-q/ants) 以及 Meta-Harness 一系工作。"每个区块一次类型化、带校准的决策"的想法来自
+改编自同一作者的 [ants](https://github.com/p-to-q/ants) 以及 Meta-Harness 一系工作；[`docs/figures/`](docs/figures/) 里的配图（可用 `python docs/figures/make_figures.py` 重新生成）改编自该项目的图示版式。"每个区块一次类型化、带校准的决策"的想法来自
 [Jev Trader](https://github.com/jarrodwatts/jev-trader)（Jarrod Watts）与 TypeSafe 的 Jev 模型。它所立足的地面是 [Monad](https://www.monad.xyz)。
 Blockwise 是独立的项目，与它们不共享代码。
 
