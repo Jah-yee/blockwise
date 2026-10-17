@@ -225,3 +225,4 @@ button:focus-visible,a:focus-visible,summary:focus-visible{outline:2px solid var
   .big3{gap:16px 32px}
   .tile{padding:16px}
 }
+@media (max-width:700px){.ax{font-size:20px}}

@@ -66,8 +66,8 @@ function measure(): number {
 }
 
 function draw() {
-  const status = `x${speed}  ${cursor}/${EVENTS.length}`;
-  const lines = renderFrame(state, { width: cols, height: ROWS, color: true, ascii: false, links: false, page, replay: true, keys: "1-5 pages  ? help  space pause  +/- speed", status });
+  const status = cols >= 70 ? `x${speed}  ${cursor}/${EVENTS.length}` : `x${speed}`;
+  const lines = renderFrame(state, { width: cols, height: ROWS, color: true, ascii: false, links: false, page, replay: true, keys: cols >= 70 ? "1-5 pages  ? help  space pause  +/- speed" : "1-5 pages  ? help", status });
   term.innerHTML = lines.map(ansiToHtml).join("\n");
   const s = Math.floor(pos / 1000);
   meter.textContent = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;

@@ -11,5 +11,5 @@
     "types": ["bun-types"],
     "lib": ["ESNext", "DOM", "DOM.Iterable"]
   },
-  "include": ["packages/*/src", "packages/*/test", "apps/*/src", "scripts"]
+  "include": ["packages/*/src", "packages/*/test", "apps/*/src", "scripts"], "exclude": ["apps/site"]
 }

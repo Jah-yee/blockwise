@@ -123,6 +123,7 @@ function counters(s: ViewState, st: Style, cw: number): string[] {
     [t ? t.gasMon.toFixed(2) + " MON" : "-", "gas, test MON"],
   ];
   const colw = Math.floor((cw - 2) / 3);
+  if (colw < 18) { items[0]![1] = "evals"; items[1]![1] = "blocks"; items[2]![1] = "gas, MON"; if (t) items[2]![0] = t.gasMon.toFixed(2); }
   return [
     "  " + items.map(([v]) => padR(st.bold(v), colw)).join("").replace(/\s+$/, ""),
     "  " + items.map(([, l]) => padR(st.dim(l), colw)).join("").replace(/\s+$/, ""),
@@ -356,8 +357,8 @@ export function renderFrame(s: ViewState, o: RenderOpts): string[] {
     case "help": body = helpPage(st, cw, !o.replay && s.hello?.mode === "live" && !o.keys?.includes("space")); break;
     default: body = overview(s, st, g, cw);
   }
-  const footer = o.keys ? st.dim(o.keys) : "";
   const stat = o.status ? st.dim(o.status) : "";
+  const footer = o.keys ? st.dim(vlen(o.keys) + 2 + vlen(stat) > cw ? clip(o.keys, Math.max(0, cw - 2 - vlen(stat))) : o.keys) : "";
   const lines = [...head, ...fit(body, bodyH), rule, footer + " ".repeat(Math.max(2, cw - vlen(footer) - vlen(stat))) + stat];
   return lines.slice(0, o.height).map((l) => " " + clip(l, cw)).map((l) => (vlen(l) > W ? clip(l, W) : l));
 }

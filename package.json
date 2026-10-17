@@ -9,7 +9,7 @@
     "test:core": "bun test packages/core",
     "test:chain": "bun test packages/chain",
     "test:contracts": "cd contracts && forge test",
-    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p apps/site/tsconfig.json",
     "gen:series": "bun run scripts/gen-series.ts",
     "gen:golden": "bun run scripts/gen-golden.ts",
     "orch": "bun run apps/orchestrator/src/cli.ts"
