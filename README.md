@@ -93,11 +93,12 @@ A single screen; motion is the content ([presentation](docs/presentation.md)). *
 
 ```
  Blockwise  ● live   block 71,750,141   epoch 0x3fa9…   [Jev: stand-in]   gen 6 / 10      wallet 0x7a…c1  funded 12.0
- ┌ population ─────────────────────┐  ┌ map: style × activity ───────────────────────┐
- │ ▒▒▓▓░░▒▒██▒░░▓▒▒░▓▓▒░▒▒▓░░▒▓▒▒░  │  │   low   mid   high    ▲ elite per niche      │
- │ ░▒▒▓▒░▓▓▒▒░▒▒█▓▒░░▒▒▓▒▒░▓▒░░▒▒░  │  │ mom  ▒     ▓▲    ░      ceiling proxy ┄┄ +640│
- └─────────────────────────────────┘  │ rev  ░     █▲    ▒      champion  +412 / +158 / −37│
- landed in blocks  ▮▮▮▮▮▮▮▮▮   N evals in B blocks     └────────────────────────────────────┘
+ ┌ population ─────────────────────┐  ┌ map: style × activity ──────────────────────────────┐
+ │ ▒▒▓▓░░▒▒██▒░░▓▒▒░▓▓▒░▒▒▓░░▒▓▒▒░ │  │   low   mid   high    ▲ elite per niche             │
+ │ ░▒▒▓▒░▓▓▒▒░▒▒█▓▒░░▒▒▓▒▒░▓▒░░▒▒░ │  │ mom  ▒     ▓▲    ░      ceiling proxy ┄┄ +640       │
+ └─────────────────────────────────┘  │ rev  ░     █▲    ▒      champion  +412 / +158 / −37 │
+                                      └─────────────────────────────────────────────────────┘
+landed in blocks  ▮▮▮▮▮▮▮▮▮   N evals in B blocks
  gas 24.1 MON   Jev $0.0031   Brier 0.19 vs 0.25
  funding  agent 6:12  ▮▮▮▮▮▮ 8.0 (virtual +0.13)   agent 5:07  ▮▮ 4.0 (virtual −0.02)        [fund]
 ```
