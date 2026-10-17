@@ -1,9 +1,9 @@
 import React, { useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { init, reduce, type State, type Cell } from "./state";
+import { init, reduce, ck, type State, type Cell } from "./state";
 import { pickSource } from "./source";
 import { DICT, SDICT, pickLang, type Dict, type Lang, type SD } from "./i18n";
-import { lanes, coarseTs, opStats, planGens, generalization, health, cost, bestSoFar } from "./derive";
+import { lanes, coarseTs, opStats, planGens, generalization, health, cost, bestSoFar, phases } from "./derive";
 
 // Active dictionary; assigned in App before children render.
 let T: Dict = DICT.en;
@@ -71,17 +71,14 @@ function Stats({ s }: { s: State }) {
   );
 }
 
-function Plate({ s }: { s: State }) {
+type Sel = { gen: number; idx: number } | undefined;
+function Plate({ s, sel, onSel }: { s: State; sel: Sel; onSel: (x: Sel) => void }) {
   const devs = s.cells.filter((c) => c.dev !== undefined).map((c) => c.dev!);
   const lo = devs.length ? Math.min(...devs) : 0, hi = devs.length ? Math.max(...devs) : 1;
   const top = new Set((s.ends[s.gen]?.archive ?? []).filter((a) => a.gen === s.gen).map((a) => a.idx));
   const landed = s.cells.filter((c) => c.state === "landed").length;
   const cells = s.cells.length ? s.cells : Array.from({ length: 100 }, () => ({ state: "idle" }) as Cell);
   const rows = Math.ceil(cells.length / COLS);
-  const ge = s.ends[s.gen];
-  const h = ge ? ge.blocks.histogram : s.liveHist;
-  const keys = Object.keys(h).map(Number);
-  const total = keys.reduce((a, k) => a + (h[k] ?? 0), 0);
   return (
     <section className="tile hero">
       <div className="th"><h2>{T.plate_title}</h2><span className="sub num">{T.gen_word} {s.count ? s.gen - s.base + 1 : "-"} · {T.plate_sub(landed, s.planned ? String(s.planned) : "?")}</span></div>
@@ -89,22 +86,40 @@ function Plate({ s }: { s: State }) {
         <div className="collabels">{Array.from({ length: COLS }, (_, i) => <span key={i}>{i + 1}</span>)}</div>
         <div className="rowlabels">{Array.from({ length: rows }, (_, i) => <span key={i}>{ROWS[i]}</span>)}</div>
         <div className="wells">
-          {cells.map((c, i) => (
-            <div key={i} className={"well " + c.state + (top.has(i) ? " top" : "") + (c.status && c.status !== "success" ? " bad" : "")}
-              title={c.dev !== undefined ? `${ROWS[Math.floor(i / COLS)]}${(i % COLS) + 1}  dev ${c.dev}` : `${ROWS[Math.floor(i / COLS)]}${(i % COLS) + 1}`}>
-              {c.state === "landed" && c.status === "success" && <i key={c.hash} style={{ background: step(c.dev ?? lo, lo, hi) }} />}
-            </div>
-          ))}
-        </div>
-      </div>
-      <div className="heroft">
-        <div className="legend">
-          <span>{T.lg_dev}</span><span>{T.lg_low}</span>{SCALE.map((c) => <i key={c} style={{ background: c }} />)}<span>{T.lg_high}</span>
-          <span className="sep" /><span className="ringkey" /><span>{T.lg_top}</span>
-          <span className="sep" /><span className="badkey" /><span>{T.lg_bad}</span>
+          {cells.map((c, i) => {
+            const name = `${ROWS[Math.floor(i / COLS)]}${(i % COLS) + 1}`;
+            const on = sel && sel.gen === s.gen && sel.idx === i;
+            return (
+              <button type="button" key={i} aria-label={name + (c.dev !== undefined ? ` dev ${c.dev}` : "")} aria-pressed={!!on}
+                className={"well " + c.state + (top.has(i) ? " top" : "") + (c.status && c.status !== "success" ? " bad" : "") + (on ? " sel" : "")}
+                title={c.dev !== undefined ? `${name}  dev ${c.dev}` : name} onClick={() => onSel(on ? undefined : { gen: s.gen, idx: i })}>
+                {c.state === "landed" && c.status === "success" && <i key={c.hash} style={{ background: step(c.dev ?? lo, lo, hi) }} />}
+              </button>
+            );
+          })}
         </div>
       </div>
     </section>
+  );
+}
+
+function Inspect({ s, sel }: { s: State; sel: Sel }) {
+  const ex = safeExplorer(s.hello?.explorer);
+  const c = sel ? s.cands[ck(sel.gen, sel.idx)] : undefined;
+  if (!sel || !c) return null;
+  const par = c.parent ? s.cands[ck(c.parent.gen, c.parent.idx)] : undefined;
+  const name = `${ROWS[Math.floor(sel.idx / COLS)]}${(sel.idx % COLS) + 1}`;
+  const bad = c.status && c.status !== "success";
+  return (
+    <div className="insp" role="status">
+      <div className="insp-h"><b className="mono">{name}</b><span className="mono">{T.gen_word} {sel.gen - s.base + 1} #{sel.idx}</span><span className="mono">{T.op[c.op] ?? c.op}</span></div>
+      <dl>
+        <div><dt>{T.insp_dev}</dt><dd className={"mono" + (bad ? " revert" : "")}>{c.dev !== undefined && !bad ? sgn(c.dev, 0) : (T.st[c.status ?? ""] ?? T.insp_nodev)}</dd></div>
+        <div><dt>{T.insp_parent}</dt><dd className="mono">{c.parent ? `${T.gen_word} ${c.parent.gen - s.base + 1} #${c.parent.idx}${par?.dev !== undefined ? ` (${sgn(par.dev, 0)})` : ""}` : T.insp_root}</dd></div>
+        <div><dt>{T.insp_tx}</dt><dd className="mono"><Lk href={ex ? `${ex}/tx/${c.hash}` : ""}>{short(c.hash)}</Lk></dd></div>
+      </dl>
+      {c.params.length > 0 && <div className="mono insp-p">[ {c.params.join("  ")} ]</div>}
+    </div>
   );
 }
 
@@ -167,8 +182,8 @@ function Tape({ s }: { s: State }) {
 function Champion({ s }: { s: State }) {
   const lastEnd = s.ends[Math.max(0, ...Object.keys(s.ends).map(Number))];
   const sealed = s.sealed;
-  const c = sealed ? { dev: sealed.dev, confirm: sealed.confirm, idx: sealed.idx, gen: sealed.gen, params: lastEnd?.archive.find((a) => a.gen === sealed.gen && a.idx === sealed.idx)?.params ?? [] }
-    : lastEnd ? (() => { const t = lastEnd.archive[0] ?? { ...lastEnd.best, gen: lastEnd.gen }; const cf = s.confirms[`${t.gen}:${t.idx}`]; return { dev: t.dev, confirm: cf?.score, idx: t.idx, gen: t.gen, params: t.params }; })() : undefined;
+  const c = sealed ? { dev: sealed.dev, confirm: sealed.confirm, idx: sealed.idx, gen: sealed.gen }
+    : lastEnd ? (() => { const t = lastEnd.archive[0] ?? { ...lastEnd.best, gen: lastEnd.gen }; const cf = s.confirms[`${t.gen}:${t.idx}`]; return { dev: t.dev, confirm: cf?.score, idx: t.idx, gen: t.gen }; })() : undefined;
   const sv = sealed?.score;
   const scale = Math.max(1, c?.dev ?? 0, c?.confirm ?? 0, sv ?? 0);
   const w = (v: number | undefined) => (v === undefined ? 0 : Math.max(0, Math.min(1, v / scale)) * 100);
@@ -178,16 +193,19 @@ function Champion({ s }: { s: State }) {
     if (sv !== undefined) verdict = sv > 0 ? T.kept_sealed(fmt((sv / c.dev) * 100)) : T.kept_sealed_neg;
     else if (c.confirm !== undefined) verdict = T.kept_confirm(fmt((c.confirm / c.dev) * 100));
   }
+  const col = (lbl: string, v: number | undefined, note: string, cls = "", none = "n/a") => (
+    <div className={"tcol" + cls}><div className="lbl">{lbl}</div><div className={"big num" + (v === undefined ? " unseen" : "")}>{v === undefined ? none : sgn(v, 0)}</div><div className="meter"><i style={{ width: w(v) + "%" }} /></div><div className="cap">{note}</div></div>
+  );
   return (
-    <Tile cls="champ" title={T.champ_title} sub={c ? `${T.gen_word} ${c.gen} #${c.idx}` : T.champ_none}>
+    <div className="champ">
+      <p className="mono cap champ-id">{T.champ_title} · {c ? `${T.gen_word} ${c.gen - s.base + 1} #${c.idx}` : T.champ_none}</p>
       <div className="trio">
-        <div><div className="lbl">{T.dev}</div><div className="big num">{sgn(c?.dev, 0)}</div><div className="meter"><i style={{ width: w(c?.dev) + "%" }} /></div><div className="cap">{T.dev_note}</div></div>
-        <div><div className="lbl">{T.confirm}</div><div className={"big num" + (c?.confirm === undefined ? " unseen" : "")}>{c?.confirm === undefined ? "n/a" : sgn(c.confirm, 0)}</div><div className="meter"><i style={{ width: w(c?.confirm) + "%" }} /></div><div className="cap">{c?.confirm === undefined ? X.proves_no_conf : T.confirm_note}</div></div>
-        <div className={"sealedcol" + sealedCls}><div className="lbl">{T.sealed}</div><div className={"big num" + (sealed ? "" : " unseen")}>{sealed ? sgn(sv, 0) : T.unseen}</div><div className="meter"><i style={{ width: w(sv) + "%" }} /></div><div className="cap">{T.sealed_note}</div></div>
+        {col(T.dev, c?.dev, S.g_dev)}
+        {col(T.confirm, c?.confirm, S.g_conf)}
+        {col(T.sealed, sv, S.g_seal, sealedCls, T.unseen)}
       </div>
       {verdict && <p className={"verdict" + sealedCls}>{verdict}</p>}
-      {c && c.params.length > 0 && <div className="spec num">{T.spec} [ {c.params.join("  ")} ]</div>}
-    </Tile>
+    </div>
   );
 }
 
@@ -397,11 +415,11 @@ function Proves({ s, kind, fixture }: { s: State; kind: string; fixture: boolean
 
 let S: SD = SDICT.en;
 
-function Sec({ id, n, h, q, children }: { id: string; n?: number; h: string; q?: string; children: React.ReactNode }) {
+function Sec({ id, n, h, children }: { id: string; n?: number; h: string; children: React.ReactNode }) {
   return (
     <section className="sec" id={id} aria-labelledby={id + "-h"}>
       <div className="sec-in">
-        <header className="sh">{n !== undefined && <span className="mono sn">{String(n).padStart(2, "0")}</span>}<h2 id={id + "-h"}>{h}</h2>{q && <p className="q">{q}</p>}</header>
+        <header className="sh">{n !== undefined && <span className="mono sn">{String(n).padStart(2, "0")}</span>}<h2 id={id + "-h"}>{h}</h2></header>
         {children}
       </div>
     </section>
@@ -420,23 +438,16 @@ function Icon({ i }: { i: number }) {
   );
 }
 
-function StatusRow({ s, badge, bad }: { s: State; badge: string; bad: boolean }) {
+function StatusRow({ s }: { s: State }) {
   const t = s.totals; const N = s.hello?.config.generations;
   const landed = Object.values(s.cands).filter((c) => c.status).length;
-  const rev = t?.reverted ?? Object.values(s.cands).filter((c) => c.status === "reverted").length;
-  const lost = t?.lost ?? Object.values(s.cands).filter((c) => c.status === "lost").length;
   const items: [string, React.ReactNode][] = [
-    [S.st_block, s.block ? fmt(s.block) : "-"],
-    [S.st_gen, s.count ? `${s.gen - s.base + 1} / ${N ?? "?"}` : "-"],
+    [S.st_gen, s.count ? <>{s.gen - s.base + 1}<small> / {N ?? "?"}</small></> : "-"],
     [S.st_evals, fmt(t?.evals ?? landed)],
-    [S.st_bad, `${fmt(rev)} / ${fmt(lost)}`],
-    [S.st_gas, fmt(t?.gasMon ?? 0, 3)],
+    [S.st_block, s.block ? fmt(s.block) : "-"],
   ];
   return (
-    <div className="status" role="status">
-      <dl>{items.map(([k, v]) => <div key={k}><dt className="mono">{k}</dt><dd className="mono">{v}</dd></div>)}</dl>
-      <p className={"badge mono" + (bad ? " warn" : "")}><i className="dot" />{badge}</p>
-    </div>
+    <dl className="status" role="status">{items.map(([k, v]) => <div key={k}><dd className="mono num">{v}</dd><dt>{k}</dt></div>)}</dl>
   );
 }
 
@@ -464,7 +475,6 @@ function RunBlock({ s }: { s: State }) {
       <div className="big3">
         <div><b className="mono num">{fmt(t?.evals ?? landed)}</b><span>{S.n_evals}</span></div>
         <div><b className="mono num">{fmt(blocks)}</b><span>{S.n_blocks}</span></div>
-        <div><b className="mono num">{fmt(t?.gasMon ?? 0, 3)}</b><span>{S.n_gas}</span></div>
       </div>
       <Bars s={s} />
       <p className="cap2">{S.run_sentence(s.gen - s.base + 1)}</p>
@@ -489,26 +499,32 @@ function GenBlock({ s }: { s: State }) {
   const lost = s.errLog.filter((e) => e.scope === "confirm" && /\blost\b/i.test(e.message)).length;
   return (
     <>
-      <div className="bare"><Champion s={s} /></div>
-      {none && <p className="verdict warn">{s.count && s.ends[s.gen] || Object.keys(s.ends).length ? S.g_none(g.attempts, g.confirmed, rev, lost) : S.g_wait}</p>}
+      <Champion s={s} />
+      {none && <p className="verdict warn">{s.count && Object.keys(s.ends).length ? S.g_none(g.attempts, g.confirmed, rev, lost) : S.g_wait}</p>}
     </>
   );
 }
 
 function Wrong({ s }: { s: State }) {
-  const h = health(s);
-  const items: [string, number][] = [[S.w_rev, h.rev], [S.w_lost, h.lost], [S.w_conf, h.confirmRev + h.confirmLost]];
+  const p = phases(s);
+  if (p.all.n === 0) return <p className="verdict">{S.w_none}</p>;
+  const first = p.split ? p.first : p.all;
   return (
-    <>
-      <div className="big3 small">{items.map(([k, v]) => <div key={k}><b className={"mono num" + (v ? " revert" : "")}>{fmt(v)}</b><span>{k}</span></div>)}</div>
-      {h.rows.length === 0 ? <p className="muted">{S.w_none}</p> : (
-        <div className="reasons2">
-          <h3 className="mono lab">{S.w_reasons}</h3>
-          <ul>{h.rows.slice(0, 5).map((r, i) => <li key={i}><b className="mono num revert">{fmt(r.count)}</b><span className="mono lab2">{T.hl_scope_v[r.scope] ?? r.scope} · {T.hl_cls[r.cls]}</span><span className="mono small">{r.sample}</span></li>)}</ul>
-          <p className="muted">{S.w_noreason}</p>
+    <div className={"phases" + (p.split ? " two" : "")}>
+      <div className="phase bad">
+        <h3>{p.split ? S.w_first_h : S.w_early_h}</h3>
+        <b className="mono num revert">{fmt(first.n)}</b><span className="plab">{S.w_first_big}</span>
+        <p>{p.split ? S.w_first_d(first.rev, first.lost) : S.w_early_d(first.rev, first.lost)}</p>
+        {p.split && p.sealSkip && <p>{S.w_seal_skip}</p>}
+      </div>
+      {p.split && (
+        <div className="phase good">
+          <h3>{S.w_after_h}</h3>
+          <b className="mono num pass">{fmt(p.landed)}</b><span className="plab">{S.w_after_big}</span>
+          <p>{p.sealedLanded ? S.w_after_ok : S.w_after_no}{p.later.n > 0 ? " " + S.w_after_fail(p.later.n) : ""}</p>
         </div>
       )}
-    </>
+    </div>
   );
 }
 
@@ -525,7 +541,25 @@ function Controls({ player, paused, speed, setSpeed, begin, force }: { player: R
   );
 }
 
+const EMBED = (() => { try { return new URLSearchParams(location.search).get("embed") === "1"; } catch { return false; } })();
+function useEmbedHeight() {
+  useEffect(() => {
+    if (!EMBED || window.parent === window) return;
+    let last = 0;
+    const post = () => {
+      const h = Math.ceil(document.documentElement.getBoundingClientRect().height);
+      if (h !== last) { last = h; window.parent.postMessage({ type: "blockwise-height", h }, "*"); }
+    };
+    const ro = new ResizeObserver(post);
+    ro.observe(document.body);
+    window.addEventListener("load", post);
+    post();
+    return () => { ro.disconnect(); window.removeEventListener("load", post); };
+  }, []);
+}
+
 function App() {
+  useEmbedHeight();
   const player = useMemo(() => pickSource(), []);
   const [lang, setLang] = useState<Lang>(pickLang);
   T = DICT[lang]; X = LX[lang]; S = SDICT[lang];
@@ -542,7 +576,7 @@ function App() {
     const f = (ev: KeyboardEvent) => {
       if (ev.metaKey || ev.ctrlKey || ev.altKey) return;
       const t = ev.target as HTMLElement | null;
-      if (t && /^(INPUT|TEXTAREA|SUMMARY)$/.test(t.tagName) && ev.key === " ") return;
+      if (t && (/^(INPUT|TEXTAREA|SUMMARY)$/.test(t.tagName) || t.classList.contains("well")) && ev.key === " ") return;
       const k = ev.key;
       if (k === " ") { ev.preventDefault(); player.togglePause?.(); force((n) => n + 1); }
       else if (k === "1") setSpeed(1); else if (k === "4") setSpeed(4); else if (k === "6") setSpeed(16);
@@ -565,48 +599,58 @@ function App() {
   const paused = player.isPaused?.() ?? false;
   const judgeLine = model === "jev" ? S.judge_model("jev") : model === "none" ? S.judge_none : S.judge_standin;
   const lastGen = s.gen - s.base + 1;
+  const [sel, setSel] = useState<Sel>();
   return (
-    <div className={"story " + lang}>
-      <nav className="navbar"><span className="word">{S.wordmark}</span>
+    <div className={"story " + lang + (EMBED ? " embed" : "")}>
+      {!EMBED && <nav className="navbar"><span className="word">{S.wordmark}</span>
         <div className="seg" role="group" aria-label={T.language}>
           {(["en", "zh"] as Lang[]).map((l) => <button key={l} className={l === lang ? "on" : ""} aria-pressed={l === lang} onClick={() => switchLang(l)}>{l === "en" ? "EN" : "中文"}</button>)}
         </div>
-      </nav>
+      </nav>}
       {down && <div className="banner">{T.banner_down}</div>}
       <section className="hero2">
         <div className="hero-in">
-          <h1>{S.hero_line}</h1>
-          <StatusRow s={s} badge={badge} bad={fixture || k === "demo"} />
-          <div className="plate-wrap"><div className="bare calm"><Plate s={s} /></div><p className="cap2">{S.plate_cap}</p></div>
-          <Controls player={player} paused={paused} speed={speed} setSpeed={setSpeed} begin={begin} force={force} />
+          <div className="hero-l">
+            <h1>{S.hero_line}</h1>
+            <p className="lede">{S.hero_sub}</p>
+            <StatusRow s={s} />
+            <p className={"badge mono" + (fixture || k === "demo" ? " warn" : "")}><i className="dot" />{badge}</p>
+          </div>
+          <div className="hero-r">
+            <div className="bare calm"><Plate s={s} sel={sel} onSel={setSel} /></div>
+            <Inspect s={s} sel={sel} />
+            <p className="cap2">{S.plate_cap}</p>
+            <Controls player={player} paused={paused} speed={speed} setSpeed={setSpeed} begin={begin} force={force} />
+          </div>
         </div>
       </section>
 
-      <Sec id="how" n={1} h={S.how_h} q={S.how_q}>
+      <Sec id="how" n={1} h={S.how_h}>
         <ol className="steps">{S.steps.map((st, i) => (
-          <li key={i}><Icon i={i} /><span className="mono sn2">{i + 1}</span><h3>{st.t}</h3><p>{st.d}</p></li>
+          <li key={i}><Icon i={i} /><h3>{st.t}</h3><p>{st.d}</p></li>
         ))}</ol>
-        <p className="mono lab ill">{S.illus}</p>
       </Sec>
 
-      <Sec id="run" n={2} h={S.run_h} q={S.run_q}><RunBlock s={s} /></Sec>
-      <Sec id="work" n={3} h={S.work_h} q={S.work_q}><div className="bare chartbox"><Curve s={s} /></div><Verdict s={s} /></Sec>
-      <Sec id="gen" n={4} h={S.gen_h} q={S.gen_q}><GenBlock s={s} /></Sec>
-      <Sec id="wrong" n={5} h={S.wrong_h} q={S.wrong_q}><Wrong s={s} /></Sec>
+      <Sec id="run" n={2} h={S.run_h}><RunBlock s={s} /></Sec>
+      <Sec id="work" n={3} h={S.work_h}><div className="bare chartbox"><Curve s={s} /></div><Verdict s={s} /></Sec>
+      <Sec id="gen" n={4} h={S.gen_h}><GenBlock s={s} /></Sec>
+      <Sec id="wrong" n={5} h={S.wrong_h}><Wrong s={s} /></Sec>
 
-      <Sec id="more" n={6} h={S.more_h} q={S.more_q}>
+      <Sec id="more" n={6} h={S.more_h}>
         <details className="more">
           <summary>{S.more_hint}</summary>
           <div className="more-grid">
-            <NicheMap s={s} /><Operators s={s} /><Tape s={s} /><Cost s={s} /><Judge s={s} model={model} /><Timeline s={s} />
+            <NicheMap s={s} /><Operators s={s} /><Tape s={s} /><Health s={s} /><Cost s={s} /><Judge s={s} model={model} /><Timeline s={s} />
           </div>
         </details>
       </Sec>
 
       <Sec id="read" n={7} h={S.read_h}>
         <ul className="plain">{S.read.map((x, i) => <li key={i}>{x}</li>)}</ul>
-        <h3 className="h3b">{S.proves_h}</h3>
-        <div className="bare"><Proves s={s} kind={k} fixture={fixture} /></div>
+        <details className="more">
+          <summary>{S.proves_h}</summary>
+          <div className="bare"><Proves s={s} kind={k} fixture={fixture} /></div>
+        </details>
         <h3 className="h3b">{S.faq_h}</h3>
         <div className="faq">{S.faq.map((f, i) => (
           <details key={i}><summary>{f.q}</summary><p>{f.a}{i === 3 ? " " + judgeLine : ""}</p></details>
@@ -615,7 +659,6 @@ function App() {
 
       <footer className="foot">
         <p>{S.disc}</p>
-        <p>{T.foot} {k === "demo" ? T.foot_demo : ""} {fixture ? T.foot_fixture : ""}</p>
         <p className="mono small">{X.stat_hint}{player.total ? " · " + T.progress(player.pos?.() ?? 0, player.total) : ""}{s.count ? ` · ${T.gen_word} ${lastGen}` : ""}</p>
       </footer>
     </div>

@@ -1,7 +1,7 @@
 // The watch surface: a TTY gets the full-screen instrument, anything else gets line logs. Same events, same fold.
 import { detectEnv } from "./ansi";
 import { endLine, lineFor } from "./lines";
-import { renderFrame } from "./render";
+import { PAGES, renderFrame, type Page } from "./render";
 import { liveEvents, paced, readEvents, type Pace } from "./source";
 import { fold, initState, reduce, type Ev } from "./state";
 
@@ -19,6 +19,7 @@ export interface WatchArgs {
   at?: number;          // --frame: stop after this many events
   width?: number; height?: number;
   color?: boolean | "auto"; ascii?: boolean;
+  page?: Page;          // --frame: which page
   exitAtEnd?: boolean;  // TTY: leave when a recording ends instead of waiting for q
 }
 
@@ -31,9 +32,9 @@ function sourceOf(a: WatchArgs, pace: Pace, signal: AbortSignal): AsyncIterable<
 }
 
 /** One frame, to a string. Used by `watch --frame` and by tests. */
-export function frameOf(events: Ev[], o: { width: number; height: number; color: boolean; ascii?: boolean; links?: boolean; status?: string; keys?: string }): string {
+export function frameOf(events: Ev[], o: { width: number; height: number; color: boolean; ascii?: boolean; links?: boolean; status?: string; keys?: string; page?: Page; replay?: boolean }): string {
   const s = fold(events);
-  return renderFrame(s, { width: o.width, height: o.height, color: o.color, ascii: !!o.ascii, links: !!o.links, status: o.status, keys: o.keys }).join("\n") + "\n";
+  return renderFrame(s, { width: o.width, height: o.height, color: o.color, ascii: !!o.ascii, links: !!o.links, status: o.status, keys: o.keys, page: o.page, replay: o.replay }).join("\n") + "\n";
 }
 
 export async function watch(a: WatchArgs, io: IO, signal: AbortSignal = new AbortController().signal): Promise<number> {
@@ -43,7 +44,7 @@ export async function watch(a: WatchArgs, io: IO, signal: AbortSignal = new Abor
   if (a.frame) {
     const evs = readEventsFor(a);
     const take = a.at !== undefined ? evs.slice(0, a.at) : evs;
-    io.out.write(frameOf(take, { width: a.width ?? 120, height: a.height ?? 34, color: term.color, ascii: term.ascii, links: false, keys: "q quit", status: `${take.length} of ${evs.length} events` }));
+    io.out.write(frameOf(take, { width: a.width ?? 120, height: a.height ?? 34, color: term.color, ascii: term.ascii, links: false, keys: "q quit", page: a.page, replay: true, status: `${take.length} of ${evs.length} events` }));
     return 0;
   }
 
@@ -81,11 +82,13 @@ async function watchTty(a: WatchArgs, io: IO, signal: AbortSignal, term: ReturnT
   signal.addEventListener("abort", onAbort);
 
   const size = () => ({ width: out.columns ?? 120, height: out.rows ?? 34 });
-  const keys = () => (a.live ? "q quit" : "q quit   space pause   + faster   - slower");
+  let page: Page = a.page ?? 1, lastPage: Page = page;
+  const keys = () => (a.live ? "1-5 pages   ? help   q quit" : "1-5 pages   ? help   space pause   +/- speed   q quit");
+  const step = (d: number) => { const cur = page === "help" ? lastPage : page; page = PAGES[(PAGES.findIndex((p) => p.key === cur) + d + PAGES.length) % PAGES.length]!.key; };
   const draw = () => {
     const { width, height } = size();
     const note = a.live ? status : `${ended ? "end of recording" : pace.paused ? "paused" : Number.isFinite(pace.speed) ? `x${trim(pace.speed)}` : "max speed"}  ${s.events} events`;
-    const lines = renderFrame(s, { width, height, color: term.color, ascii: term.ascii, links: term.links, keys: keys(), status: note });
+    const lines = renderFrame(s, { width, height, color: term.color, ascii: term.ascii, links: term.links, keys: keys(), status: note, page, replay: !!a.replay });
     let buf = "";
     for (let i = 0; i < Math.min(lines.length, height); i++) buf += `\x1b[${i + 1};1H${lines[i]}\x1b[K`;
     buf += `\x1b[${Math.min(lines.length, height) + 1};1H\x1b[J`;
@@ -97,9 +100,12 @@ async function watchTty(a: WatchArgs, io: IO, signal: AbortSignal, term: ReturnT
   const restore = () => { if (restored) return; restored = true; try { inp.setRawMode?.(false); } catch { /* not a tty any more */ } out.write(ALT_OFF); };
   const onKey = (b: Buffer | string) => {
     const raw = b.toString();
-    if (raw.startsWith("\x1b[") || raw.startsWith("\x1bO")) return; // arrow/function keys: ignored
+    if (raw === "\x1b[C" || raw === "\x1b[D") { step(raw === "\x1b[C" ? 1 : -1); dirty = true; return; } // right, left
+    if (raw.startsWith("\x1b[") || raw.startsWith("\x1bO")) return; // other function keys: ignored
     for (const k of raw === "\x1b" ? ["q"] : raw) {
       if (k === "q" || k === "Q" || k === "\x03") { quit = true; pace.stop = true; ac.abort(); return; }
+      if (k >= "1" && k <= "5") { page = Number(k) as Page; continue; }
+      if (k === "?") { if (page === "help") page = lastPage; else { lastPage = page; page = "help"; } continue; }
       if (a.live) continue;
       if (k === " ") pace.paused = !pace.paused;
       else if (k === "+" || k === "=") pace.speed = Number.isFinite(pace.speed) ? Math.min(1024, pace.speed * 2) : pace.speed;

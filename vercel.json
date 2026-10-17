@@ -1,10 +1,22 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "installCommand": "bun install",
-  "buildCommand": "bun run --cwd apps/web build --replay fixtures/testnet-run-2.jsonl",
-  "outputDirectory": "apps/web/dist",
+  "buildCommand": "bun run --cwd apps/web build --replay fixtures/testnet-run-2.jsonl && bun run --cwd apps/site build",
+  "outputDirectory": "apps/site/dist",
   "cleanUrls": true,
   "headers": [
-    { "source": "/(.*)", "headers": [ { "key": "X-Content-Type-Options", "value": "nosniff" }, { "key": "Referrer-Policy", "value": "no-referrer" } ] }
+    {
+      "source": "/(.*)",
+      "headers": [
+        {
+          "key": "X-Content-Type-Options",
+          "value": "nosniff"
+        },
+        {
+          "key": "Referrer-Policy",
+          "value": "no-referrer"
+        }
+      ]
+    }
   ]
 }

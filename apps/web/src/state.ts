@@ -8,7 +8,7 @@ export type Cand = {
   status?: "success" | "reverted" | "lost"; dev?: number; trades?: number; gasUsed?: number; latencyMs?: number; block?: number;
 };
 export type BlockRow = { number: number; ts: number; evals: number; gen: number };
-export type ErrRow = { scope: string; message: string; gen: number; seq: number };
+export type ErrRow = { scope: string; message: string; gen: number; seq: number; /** confirm events landed before this error (event order) */ after: number };
 type Ge = Extract<E, { type: "generation_end" }>;
 type Map_ = Extract<E, { type: "map" }>;
 type Alloc = Extract<E, { type: "allocation" }>;
@@ -96,7 +96,7 @@ export function reduce(s: State, e: Action): State {
     case "map": n.map = e; n.discBy = { ...s.discBy, [e.gen]: e.discovery }; break;
     case "allocation": n.allocs = [e, ...s.allocs].slice(0, 6); n.funded = e.funded; break;
     case "totals": n.totals = e; n.totalsHist = [...s.totalsHist, e]; break;
-    case "error": n.errors = [`${e.scope}: ${e.message}`, ...s.errors].slice(0, 3); n.errLog = [...s.errLog, { scope: e.scope, message: e.message, gen: s.gen, seq: s.errLog.length }]; break;
+    case "error": n.errors = [`${e.scope}: ${e.message}`, ...s.errors].slice(0, 3); n.errLog = [...s.errLog, { scope: e.scope, message: e.message, gen: s.gen, seq: s.errLog.length, after: Object.keys(s.confirms).length }]; break;
   }
   return n;
 }

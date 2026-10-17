@@ -4,7 +4,7 @@ import { Bus } from "../src/bus";
 import { checkFlags, nearest } from "../src/cli-meta";
 import { detectEnv, stripAnsi, vlen } from "../src/tui/ansi";
 import { cmdReport } from "../src/tui/commands";
-import { fitUrl, renderFrame } from "../src/tui/render";
+import { fitUrl, renderFrame, verdictOf, type Page } from "../src/tui/render";
 import { buildReport, formatReport } from "../src/tui/report";
 import { liveEvents, liveUrls, paced, parseJsonl, readEvents, SourceError } from "../src/tui/source";
 import { fold, initState, reduce, type Ev } from "../src/tui/state";
@@ -49,27 +49,37 @@ describe("state fold", () => {
   });
 });
 
+const RUN2 = readEvents(join(ROOT, "fixtures/testnet-run-2.jsonl"));
+const pageFrame = (evs: Ev[], page: Page, width: number, height = 32, o: Partial<Parameters<typeof renderFrame>[1]> = {}) =>
+  renderFrame(fold(evs), { ...base, width, height, page, replay: true, keys: "1-5 pages", status: `${evs.length} events`, ...o });
+
 describe("frame rendering", () => {
   const f120 = frame(events, 120, 34);
   test("fits the terminal exactly, no colour codes without colour", () => {
     expect(f120.length).toBe(34);
     for (const l of f120) { expect(vlen(l)).toBeLessThanOrEqual(120); expect(l).toBe(stripAnsi(l)); }
   });
-  test("has every required panel", () => {
+  test("the first screen tells the story: counters, champion dev -> confirm -> sealed, verdict", () => {
     const t = f120.join("\n");
-    for (const needle of ["BLOCKWISE", "[REPLAY]", "[STAND-IN JUDGE]", "block 71750045", "POPULATION", "200 of 200 landed", "200 evals in 4 blocks", "CHAMPION", "dev", "confirm", "sealed", "+145", "NICHE MAP", "reversion", "momentum", "TOTALS", "evals 1,999", "reverted 1", "lost 1", "LAST TRANSACTIONS", "/tx/0x"]) expect(t).toContain(needle);
+    for (const needle of ["BLOCKWISE", "[REPLAY]", "stand-in judge", "[1 overview]", "evals landed", "1,999", "gas, test MON", "CHAMPION", "gen 7, candidate 182", "+604", "+242", "+145", "VERDICT", "not a proven edge", "THIS GENERATION", "200 of 200 landed"]) expect(t).toContain(needle);
   });
-  test("snapshot, end of the recording at 120x34", () => { expect(f120.join("\n")).toMatchSnapshot(); });
-  test("snapshot, mid generation at 120x34", () => { expect(frame(events.slice(0, 700), 120, 34).join("\n")).toMatchSnapshot(); });
-  test("sealed reads unopened before the sealed look", () => {
-    const t = frame(events.slice(0, 700), 120, 34).join("\n");
-    expect(t).toContain("unopened");
+  test("snapshot, overview at the end of the recording, 120x34", () => { expect(f120.join("\n")).toMatchSnapshot(); });
+  test("snapshot, overview mid generation, 120x34", () => { expect(frame(events.slice(0, 700), 120, 34).join("\n")).toMatchSnapshot(); });
+  test("sealed reads unopened before the sealed look", () => { expect(frame(events.slice(0, 700), 120, 34).join("\n")).toContain("unopened"); });
+  test("a replay says REPLAY even when the recording was made live", () => {
+    expect(RUN2[0]).toMatchObject({ type: "hello", mode: "live" });
+    const t = pageFrame(RUN2, 1, 100).join("\n");
+    expect(t).toContain("[REPLAY]");
+    expect(t).not.toContain("[LIVE]");
+    const live = renderFrame(fold(RUN2), { ...base, width: 100, height: 32 }).join("\n");
+    expect(live).toContain("[LIVE]"); // a live source keeps the recorded mode
   });
-  test("narrow terminals stack the panels and still fit", () => {
-    const f = frame(events, 80, 40);
-    expect(f.length).toBe(40);
-    for (const l of f) expect(vlen(l)).toBeLessThanOrEqual(80);
-    expect(f.join("\n")).toContain("NICHE MAP");
+  test("narrow terminals still fit", () => {
+    for (const page of [1, 2, 3, 4, 5, "help"] as const) {
+      const f = pageFrame(events, page, 52, 36);
+      expect(f.length).toBe(36);
+      for (const l of f) expect(vlen(l)).toBeLessThanOrEqual(52);
+    }
   });
   test("a short terminal keeps the footer", () => {
     const f = frame(events, 100, 20);
@@ -77,19 +87,21 @@ describe("frame rendering", () => {
     expect(f[19]).toContain("events");
   });
   test("before any event it says it is waiting, not a crash", () => {
-    const f = frame([], 120, 34);
-    expect(f.join("\n")).toContain("WAITING");
-    expect(f.length).toBe(34);
+    for (const page of [1, 2, 3, 4, 5, "help"] as const) {
+      const f = renderFrame(fold([]), { ...base, width: 120, height: 34, page });
+      expect(f.length).toBe(34);
+      expect(f.join("\n")).toContain("WAITING");
+    }
   });
-  test("ascii mode uses no non-ASCII glyphs", () => {
-    const f = renderFrame(fold(events), { ...base, ascii: true, width: 120, height: 34 }).join("\n");
-    expect(f).toMatch(/^[\x20-\x7e\n]*$/);
+  test("ascii mode uses no non-ASCII glyphs on any page", () => {
+    for (const page of [1, 2, 3, 4, 5, "help"] as const) expect(pageFrame(RUN2, page, 120, 34, { ascii: true }).join("\n")).toMatch(/^[\x20-\x7e\n]*$/);
   });
-  test("one accent colour only", () => {
-    const f = renderFrame(fold(events), { ...base, color: true, links: true, width: 120, height: 34 }).join("\n");
-    const colours = new Set([...f.matchAll(/\x1b\[(?:1;)?(38;5;\d+)m/g)].map((m) => m[1]));
-    expect([...colours]).toEqual(["38;5;74"]);
-    expect(stripAnsi(f)).not.toContain("\x1b");
+  test("one accent colour only, bold stays on numbers", () => {
+    for (const page of [1, 2, 3, 4, 5]) {
+      const f = pageFrame(RUN2, page as Page, 120, 34, { color: true, links: true }).join("\n");
+      expect([...new Set([...f.matchAll(/\x1b\[(?:1;)?(38;5;\d+)m/g)].map((m) => m[1]))].filter((x) => x !== "38;5;74")).toEqual([]);
+      expect(stripAnsi(f)).not.toContain("\x1b");
+    }
   });
   test("long urls are shortened to fit, short ones kept whole", () => {
     const hash = "0x" + "ab".repeat(32);
@@ -99,6 +111,51 @@ describe("frame rendering", () => {
     expect(short.length).toBeLessThanOrEqual(60);
     expect(short).toContain("testnet.monadvision.com/tx/0x");
     expect(short.endsWith("abab")).toBe(true);
+  });
+});
+
+describe("pages", () => {
+  test("every page at 100 and 140 columns fits and clips no number", () => {
+    for (const W of [100, 140]) for (const page of [1, 2, 3, 4, 5, "help"] as const) {
+      const f = pageFrame(RUN2, page, W);
+      expect(f.length).toBe(32);
+      for (const l of f) { expect(vlen(l)).toBeLessThanOrEqual(W); if (!l.includes("/tx/")) expect(l).not.toMatch(/\d…|~\d/); }
+    }
+    const p1 = pageFrame(RUN2, 1, 100).join("\n");
+    for (const n of ["996", "343", "26.78 MON", "+676", "+293", "+194"]) expect(p1).toContain(n);
+  });
+  test("page 3 lists each confirmed candidate with dev, confirm, sealed and a gap", () => {
+    const t = pageFrame(RUN2, 3, 100).join("\n");
+    expect(t).toContain("8 confirmed");
+    expect(t).toMatch(/10:25 +\+676 +\+293 +\+194 +-383/);
+    expect(t).toMatch(/9:43 +\+514 +\+269 +- +-245/);
+  });
+  test("page 5 reports the confirm reverts and losses", () => {
+    const t = pageFrame(RUN2, 5, 100).join("\n");
+    expect(t).toContain("88");
+    expect(t).toContain("8 landed, 72 reverted, 8 lost (91% failed)");
+    expect(t).toContain("needs a look");
+  });
+  test("page 4 has the four operators and the niche map", () => {
+    const t = pageFrame(RUN2, 4, 100).join("\n");
+    for (const n of ["random", "mutate", "crossover", "sweep", "NICHE MAP", "momentum"]) expect(t).toContain(n);
+  });
+  test("page 2 lists blocks and the explorer links", () => {
+    const t = pageFrame(RUN2, 2, 100).join("\n");
+    expect(t).toContain("88 blocks carried evaluations");
+    expect(t).toContain("testnet.monadvision.com/tx/0x");
+  });
+  test("the help page lists the keys; the live source does not offer pause", () => {
+    expect(pageFrame(RUN2, "help", 100, 32, { keys: "space pause" }).join("\n")).toContain("pause or resume");
+  });
+  test("verdict is honest at each stage of the evidence", () => {
+    expect(verdictOf(fold([]))).toContain("Waiting");
+    const s = (n: number) => verdictOf(fold(RUN2.slice(0, n)));
+    expect(s(200)).toContain("Searching");
+    expect(verdictOf(fold(RUN2.filter((e) => e.type !== "sealed")))).toContain("sealed look has not been spent");
+    expect(verdictOf(fold(RUN2))).toContain("Held up on the sealed look: +194 bp after dev +676");
+    const bad = RUN2.map((e) => (e.type === "sealed" ? { ...e, score: -40 } : e)) as Ev[];
+    expect(verdictOf(fold(bad))).toContain("Did not hold");
   });
 });
 
@@ -149,6 +206,12 @@ describe("watch", () => {
     expect(text).toContain("BLOCKWISE");
     expect(text).toContain("end of recording");
     expect(text).not.toMatch(/\x1b\[[0-9;]*m/); // NO_COLOR: not one SGR sequence
+  });
+  test("--frame of a recording made live still says REPLAY", async () => {
+    const { io, out } = fakeIO({ tty: false });
+    await watch({ replay: join(ROOT, "fixtures/testnet-run-2.jsonl"), frame: true, width: 100, height: 32, page: 3 }, io);
+    expect(out.join("")).toContain("[REPLAY]");
+    expect(out.join("")).toContain("DEV -> CONFIRM -> SEALED");
   });
   test("--frame prints one frame of the requested size", async () => {
     const { io, out } = fakeIO({ tty: false });

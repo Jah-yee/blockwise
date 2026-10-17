@@ -130,3 +130,16 @@ export function rank(s: State, c: Cand) {
   if (c.dev === undefined) return undefined;
   return { rank: 1 + peers.filter((x) => x.dev! > c.dev!).length, of: peers.length };
 }
+
+/** Confirm failures split by event order: before the first successful confirm event vs after. Only event order is used. */
+export function phases(s: State) {
+  const cf = s.errLog.filter((e) => e.scope === "confirm" && /revert|lost/i.test(e.message));
+  const landed = Object.keys(s.confirms).length;
+  const part = (a: typeof cf) => ({ n: a.length, rev: a.filter((e) => /revert/i.test(e.message)).length, lost: a.filter((e) => /\blost\b/i.test(e.message)).length });
+  const first = cf.filter((e) => e.after === 0), later = cf.filter((e) => e.after > 0);
+  return {
+    landed, split: landed > 0 && first.length > 0, first: part(first), later: part(later), all: part(cf),
+    sealedLanded: s.sealedAll.length > 0,
+    sealSkip: s.errLog.some((e) => e.scope === "sealed" && e.after === 0),
+  };
+}
