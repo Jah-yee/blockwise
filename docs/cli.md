@@ -1,8 +1,8 @@
 # CLI reference
 
-Status: **planned**. Nothing here is implemented; this is the interface the code will be written to, modelled on the
+Status: **partly implemented**. What runs today is in the first section; everything after it is the planned interface and is marked as such. Modelled on the
 [ants CLI](https://github.com/p-to-q/ants/blob/main/docs/cli.md): read commands first, `--json` everywhere, meaningful exit codes, so a person or another agent can drive it.
-When a command ships, its row in [surfaces.md](surfaces.md) moves to `experimental` with the test that ran.
+When a planned command ships, its row in [surfaces.md](surfaces.md) moves to `experimental` with the test that ran. Why the CLI is built this way: [decision 0009](decisions/0009-surfaces-and-packaging.md).
 
 The binary is `blockwise` ([decision 0007](decisions/0007-name-and-positioning.md)). Run through Bun until packaged: `bun run orch <command>`.
 
@@ -11,6 +11,68 @@ blockwise <command> [flags]
 blockwise              # no command: the terminal interface on a terminal (tui.md), the line shell in a pipe; onboarding the first time
 blockwise --version
 ```
+
+## What runs today (`apps/orchestrator`)
+
+```bash
+bun run orch help [command]      # list, or the flags of one command (also: <command> --help)
+bun run orch --version
+bun run orch watch --replay fixtures/events.sample.jsonl --speed 16     # the terminal instrument, from a recording
+bun run orch watch --live http://localhost:8787                         # the same, from a running `run` or `serve`
+bun run orch report runs/<file>.jsonl [--json]                          # plain-text summary: what we may and may not claim
+bun run orch serve --replay FILE [--port 8787 --speed 1 --loop]         # a recording through the SSE endpoint, labelled replay
+bun run orch deploy | smoke | run ...                                   # chain commands, see apps/orchestrator/README.md
+```
+
+| command | needs a chain? | spends gas? | output |
+|---|---|---|---|
+| `help`, `--version` | no | no | stdout |
+| `watch` | no | no | full-screen on a TTY, a line log otherwise |
+| `report` | no | no | text, or one JSON object with `--json` |
+| `serve` | no | no | SSE `/events`, `/history` |
+| `deploy`, `smoke`, `run` | yes | yes (`run` needs `--yes` on testnet) | JSON on stdout (`deploy`, `smoke`), JSONL events (`run`); logs on stderr |
+
+### watch
+
+`watch` is a surface over the event stream and nothing else ([architecture](architecture.md) section 5): it never touches a wallet, the chain or `contracts/`, so it cannot spend or print a key.
+Source: exactly one of `--replay FILE` (a JSONL recording) or `--live URL` (an orchestrator's SSE endpoint; a late join replays `/history` first, then follows `/events`, and it reconnects with backoff if the server goes away).
+
+| flag | meaning |
+|---|---|
+| `--speed N` / `--speed max` | replay pace against the recording (default 1; recordings without timestamps use 150 ms per event, as `serve` does). Non-TTY replays are instant unless `--speed` is given |
+| `--lines` | force the line log even on a terminal (`BLOCKWISE_NO_TUI=1` does the same) |
+| `--frame` | print one frame and exit, for a screenshot or a diff; `--at N` stops after N events, `--width`, `--height` set the size (default 120 x 34) |
+| `--no-color` / `--color` | colour is on only for a TTY, and never when `NO_COLOR` is set or `TERM=dumb`; `--color` forces it |
+| `--ascii` | ASCII glyphs; automatic when the locale is set and is not UTF-8, or `BLOCKWISE_ASCII=1` |
+| `--exit` | leave when a recording ends instead of waiting for `q` |
+
+Keys on a terminal: `q` (or Ctrl-C) quit, `space` pause, `+` `-` change speed (replay only). The screen is drawn on the alternate screen and restored on every exit path.
+
+The screen, left to right and top to bottom: **header** (mode badge `REPLAY` or `LIVE`, a `STAND-IN JUDGE` badge when the judge is not Jev, block, generation, chain); **population** (one cell per candidate in the generation:
+`·` queued, `○` sent, `░▒▓█` landed by dev score, `×` reverted, `!` lost); **landing** (`N evals in B blocks`, one bar per block); **champion** (dev, confirm and sealed side by side; the best confirm so far until the sealed look, then the sealed candidate; the random baseline when the stream has one);
+**niche map** (3 x 3, each niche's elite dev and label); **totals**; **last transactions** with explorer URLs (the whole URL when it fits, otherwise host plus as much of the hash as fits, with the full URL as a terminal hyperlink where the terminal supports OSC 8).
+One accent colour; everything else is weight and glyph shape, so the screen reads the same in grayscale. Numbers are right-aligned in a monospace grid. Below 100 columns the panels stack. Scores are in basis points.
+
+Not a TTY (pipe, file, CI): one `key=value` line per notable event, no escapes, then `end events=... evals=... reverted=... lost=...`. Successful landings, `tx_sent`, `block`, `judge` and `map` are not logged line by line.
+
+```
+hello mode=replay model=stand-in chain=10143 epoch=0x5e5e5e5e.. gens=10 per_gen=200
+gen 0 start planned=200
+gen 0 end best_idx=10 best_dev=+408 blocks=71750001..71750004 span=4
+gen 7 sealed idx=182 dev=+604 confirm=+242 sealed=+145 trades=9 tx=https://.../tx/0x384f...
+```
+
+### report
+
+`report FILE` reads a recording and prints what the numbers allow us to say: the champion's dev, confirm and sealed scores together, the comparison with the random baseline, evaluations landed and in how many blocks, reverted and lost counts, gas in test MON,
+and a list of what we may **not** claim (a replay is not a new run; a stand-in judge says nothing about Jev; no sealed look means no out-of-sample claim; one run is one seed; synthetic series, testnet, public sealed segment). `--json` prints the same as one object with stable keys.
+It exits 1 with a message that names the line for a malformed recording and 1 for a missing file.
+
+### Errors and flags
+
+Every error says what happened and what to do next, and exits 1 unless a code below applies. A misspelt command or flag is an error with a suggestion (`unknown flag --gen for run. Did you mean --gens?`), never a silent default. A non-numeric value for a numeric flag is an error.
+`--flag value` and `--flag=value` both work; boolean flags (`--json --yes --lines --frame ...`) never swallow the next argument, so `report --json FILE` works. `--judge jev` is not wired yet: `run` says so and uses the labelled stand-in.
+`smoke --json` prints only the JSON object (no suggested-row text after it).
 
 ## Principles
 
@@ -21,7 +83,7 @@ blockwise --version
 5. **The chain is the source of truth; the mirror is a projection.** A local SQLite file (`mirror.sqlite`) caches events for speed and queries; `blockwise doctor` can rebuild it from the chain.
 6. **A failure is a normal outcome.** A revert or a dropped tx is data: it is counted, shown and exits 0 unless the command's goal failed.
 
-## Common flags
+## Common flags (planned)
 
 | flag | default | meaning |
 |---|---|---|
@@ -33,7 +95,7 @@ blockwise --version
 | `--yes` | off | confirm a spending command non-interactively |
 | `--seed N` | 0 | used by `run`, `bench` |
 
-## Flag-less resolution
+## Flag-less resolution (planned)
 
 First match wins; what was filled in is printed to stderr as `using domain=... workdir=... chain=...` (suppressed by `--json`).
 
@@ -54,7 +116,9 @@ First match wins; what was filled in is printed to stderr as `using domain=... w
 | 4 | a spending command refused: the wallet cannot cover the budget |
 | 5 | wrong chain id for a signing command |
 
-## Commands
+Implemented today: 0, 1, 4, 5. Codes 2 and 3 arrive with `doctor`, `status` and the run lock.
+
+## Commands (planned unless listed above)
 
 | command | purpose | writes? | spends gas? |
 |---|---|---|---|
@@ -115,7 +179,7 @@ Stdout is the last step result (`budget`, `idle`, `paused:user`, `done:<gen>`).
 
 ### Output conventions
 
-Plain tables, numbers before adjectives, no ANSI colour in pipes. `--json` returns one object per command with stable keys; fields added later never change an existing key's meaning.
+Plain tables, numbers before adjectives, no ANSI colour in pipes or with `NO_COLOR`. `--json` returns one object per command with stable keys; fields added later never change an existing key's meaning.
 Reference formats: candidate `GEN:IDX` (proposer implied by the wallet set), tx `0x…`, block `n`.
 
 ## For other agents
@@ -123,3 +187,20 @@ Reference formats: candidate `GEN:IDX` (proposer implied by the wallet set), tx 
 Every read command has `--json` and meaningful exit codes. `blockwise top --once --json` (whole state), `best --json`, `show REF --json`, `log -n 50 --json`, `judge --json`, `doctor --json`.
 `workspace --out DIR` writes the history as files for an agent that prefers `grep` over an API (the Meta-Harness way, see [principles](principles.md)). Controls: `hint`, `pause`, `resume`.
 An agent must not write to the mirror directly, and must never be given a key; spending commands need `--yes` and a human-held wallet.
+
+
+## Install and packaging (blockwise-cli)
+
+`bun run --cwd apps/orchestrator pack` writes to `apps/orchestrator/dist-pack/`: an npm tarball `blockwise-cli-<version>.tgz` (one bundled file; needs Bun >= 1.1 on PATH), a single-file binary `blockwise-linux-x64` (needs nothing; other targets: `pack --targets bun-darwin-arm64,bun-darwin-x64,bun-linux-arm64,bun-windows-x64`), and `SHA256SUMS`.
+Both embed the contract artifacts and the series. Outside a repository checkout, state lives in `~/.blockwise` (`config/deployments.<net>.json`, `runs/`, artifacts); `deploy`, `smoke` and `run` accept `--artifacts DIR` / `--series FILE` (or `BLOCKWISE_ARTIFACTS`, `BLOCKWISE_SERIES`) to use other files. `BLOCKWISE_HOME` moves `~/.blockwise`.
+
+```bash
+npm i --ignore-scripts ./blockwise-cli-0.1.0.tgz && npx blockwise --version
+blockwise watch --replay node_modules/blockwise-cli/fixtures/events.sample.jsonl --frame
+```
+
+## init, the Jev judge, report --md
+
+- `blockwise init [--rpc URL] [--jev-model ID] [--judge jev|stand-in|off] [--key-stdin] [--save-key] [--yes]` writes `~/.blockwise/config.json` (0600). Interactive only on a TTY; the key is never echoed or put in that file. See [jev-key.md](jev-key.md).
+- `run --judge jev [--judge-timeout 8]`: real Jev shadow judge when `TYPESAFE_AI_API_KEY` is set, otherwise a message and the labelled stand-in. Misses are counted and shown (`error` events, scope `judge`); spend is in `totals.jevUsd`.
+- `report FILE --md` prints the report as markdown (`--json` and `--md` are exclusive).

@@ -1,0 +1,75 @@
+// Bun Snapshot v1, https://bun.sh/docs/test/snapshots
+
+exports[`frame rendering snapshot, overview at the end of the recording, 120x34 1`] = `
+" BLOCKWISE  [REPLAY]  stand-in judge                                         gen 9  ·  10 of 10 done  ·  block 71750045
+ [1 overview] 2 blocks  3 generalisation  4 operators  5 cost & health                                         ? help 
+ ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ 
+   1,999                                 45                                    18.97 MON
+   evals landed                          blocks spanned                        gas, test MON
+ 
+ CHAMPION  gen 7, candidate 182
+   dev          +604  ████████████████████████████████████ searched on
+   confirm      +242  ██████████████▍                      held-out, by chain
+   sealed       +145  ████████▋                            opened once
+   random search, 20 seeds: best +611 at 1x, +634 at 2x budget (dev scale)
+ 
+ VERDICT
+   Held up on the sealed look: +145 bp after dev +604, about 24% of the dev score survived. One seed, testnet, 9
+   trades: a lead worth testing, not a proven edge.
+ 
+ THIS GENERATION  gen 9: 200 of 200 landed  best dev +618
+   ░▒░░░░░░░░ ░▒░░░░░▒▓░ ▓░█▒▒▓█▒█▒ ▒▒▒▒▓▒▒▒█▒ ▒█▒██▓▒▒▒█
+   ▒▒▒▓░▒▒▒▓▒ ░▒▒▒▒▒▒▓░░ ▒▒▒▒▒▒▒▒▒█ █▒░▒▒▒▒░▒▓ ▒█▒░█▒░▒█▒
+   ▒▒░▓▒▒▓▒▓░ ▒▒░▒░▓▒▒▒▒ ▒▒▒▓░▒▒▒▒█ ▒▒▒▓▒▒████ ▓▒▓██▒█▒██
+   ▓█▓▓███▒▒█ ▒█▒█▓▒▓▒█░ ▒▓▒▒░█▒▒░▒ ▒▓▒▒▒▒░▒▒▒ ▒▒░▒▒▒▓▒▒▓
+   · queued ○ sent ░▒▓█ landed, by dev × reverted ! lost
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ q quit                                                                                                     4225 events"
+`;
+
+exports[`frame rendering snapshot, overview mid generation, 120x34 1`] = `
+" BLOCKWISE  [REPLAY]  stand-in judge                                          gen 1  ·  1 of 10 done  ·  block 71750006
+ [1 overview] 2 blocks  3 generalisation  4 operators  5 cost & health                                         ? help 
+ ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ 
+   269                                   4                                     1.90 MON
+   evals landed                          blocks spanned                        gas, test MON
+ 
+ CHAMPION  gen 0, candidate 10  best confirm so far
+   dev          +408  ████████████████████████████████████ searched on
+   confirm      +132  ███████████▋                         held-out, by chain
+   sealed   unopened                                       one look, unspent
+   random search, 20 seeds: best +472.5 at 1x, +516.5 at 2x budget (dev scale)
+ 
+ VERDICT
+   Best confirm so far +132 bp (dev +408). The sealed look has not been spent, so nothing here is out-of-sample yet; 1
+   of 10 generations done.
+ 
+ THIS GENERATION  gen 1: 69 of 200 landed  best dev +417
+   ░░○░○░▓○░░ ░░░○▒░░○○░ ○▒░○○░░▓○░ ○░○░░○░░░█ ○░○░░▒○○○○
+   ○▒○○○○○○○○ ○○▒░○░○○○○ ○○○○○○○○○░ ○░○○○○○○○○ ○○○░○○○○▒░
+   ░○○▒○○○○░○ ░○○○░○○○○○ ○▓░○░○○○█░ ○░○○○░○○○░ ▓○█○○○○○○○
+   ░○○○○○○○○○ ░▓○░○○░○○○ ○○○○○○○○█░ ▒▓░░░○○○○○ ○○○○○○○░░○
+   · queued ○ sent ░▒▓█ landed, by dev × reverted ! lost
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ q quit                                                                                                      700 events"
+`;

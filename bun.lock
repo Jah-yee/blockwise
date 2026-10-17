@@ -21,6 +21,10 @@
         "ai": "^7.0.0",
       },
     },
+    "apps/site": {
+      "name": "@blockwise/site",
+      "version": "0.1.0",
+    },
     "apps/web": {
       "name": "@blockwise/web",
       "version": "0.1.0",
@@ -62,6 +66,8 @@
     "@blockwise/core": ["@blockwise/core@workspace:packages/core"],
 
     "@blockwise/orchestrator": ["@blockwise/orchestrator@workspace:apps/orchestrator"],
+
+    "@blockwise/site": ["@blockwise/site@workspace:apps/site"],
 
     "@blockwise/web": ["@blockwise/web@workspace:apps/web"],
 

@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Blockwise terminal, in your browser</title>
+<meta name="description" content="A recorded replay of a real Blockwise testnet run, drawn by the same code as the terminal interface. Nothing to install.">
+<style>
+:root{
+  --bg:#E1E1DC;--surface:#D0D0C9;--line:#A4A69C;--ink:#41423D;--ink-soft:#585A53;--accent:#1f5a63;
+  --term:#2b2c28;--term-ink:#E1E1DC;--term-dim:#8f9189;--term-acc:#8ec1bf;--term-line:#4a4b45;
+  --mono:ui-monospace,"SF Mono","JetBrains Mono",Menlo,Consolas,"DejaVu Sans Mono","Liberation Mono",monospace;
+  --sans:"Source Sans 3","Source Sans Pro","Segoe UI",system-ui,"Noto Sans CJK SC","PingFang SC",sans-serif;
+  --serif:"Newsreader","Source Serif 4",Charter,"Iowan Old Style",Georgia,"Noto Serif CJK SC","Songti SC",serif;
+  --gut:clamp(16px,4vw,32px);
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme=light]){--bg:#2a2b28;--surface:#353631;--line:#6a6c63;--ink:#e1e1dc;--ink-soft:#bfc0b8;--accent:#8ec1bf;--term:#1d1e1b;--term-line:#44453f}}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--bg);color:var(--ink);font:400 16px/1.55 var(--sans);overflow-x:hidden}
+html:not(.zh) .z{display:none}html.zh .e{display:none}
+a{color:var(--accent);text-underline-offset:3px}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.wrap{max-width:980px;margin:0 auto;padding:clamp(20px,4vw,40px) var(--gut) 56px}
+.top{display:flex;justify-content:space-between;align-items:baseline;gap:12px;font:500 13px var(--mono);color:var(--ink-soft)}
+.top a{color:var(--ink-soft)}
+h1{font:400 clamp(28px,5vw,44px)/1.1 var(--serif);margin:18px 0 10px;letter-spacing:-.01em}
+.lead{margin:0 0 22px;max-width:62ch;color:var(--ink-soft);font-size:17px}
+.pages{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 10px}
+button{font:500 13px var(--mono);color:var(--ink);background:transparent;border:1px solid var(--line);padding:0 12px;min-height:40px;cursor:pointer;border-radius:0}
+button:hover{background:var(--surface)}
+button[aria-pressed=true]{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+.pages button .k{opacity:.65;margin-right:6px}
+.win{background:var(--term);border:1px solid var(--term-line);box-shadow:0 1px 0 rgba(0,0,0,.08),0 14px 32px -18px rgba(0,0,0,.45)}
+.chrome{display:flex;align-items:center;gap:7px;padding:9px 12px;border-bottom:1px solid var(--term-line);font:400 12px var(--mono);color:var(--term-dim)}
+.chrome i{width:10px;height:10px;border-radius:50%;background:#55564f;display:block;flex:none}
+.chrome span{margin-left:8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.chrome .sz{margin-left:auto;flex:none}
+#screen{padding:12px 14px 14px;overflow:hidden;position:relative}
+#term{margin:0;font:400 14px/1.3 var(--mono);color:var(--term-ink);white-space:pre;height:calc(32 * 1.3em);overflow:hidden;font-variant-ligatures:none;tab-size:1;cursor:default}
+#term .b{font-weight:700}#term .d{color:var(--term-dim)}#term .a{color:var(--term-acc)}
+#term .i{background:var(--term-ink);color:var(--term)}#term .i.a{background:var(--term-acc);color:var(--term)}
+#probe{position:absolute;visibility:hidden;white-space:pre;font:400 14px/1.3 var(--mono)}
+.bar{display:flex;flex-wrap:wrap;align-items:center;gap:10px 14px;padding:10px 14px;border-top:1px solid var(--term-line);color:var(--term-ink)}
+.bar button{color:var(--term-ink);border-color:var(--term-line)}
+.bar button:hover{background:#3a3b36}
+.bar button[aria-pressed=true]{background:var(--term-ink);color:var(--term)}
+.bar .grp{display:flex;gap:4px}
+#play{min-width:92px}
+.scrub{flex:1 1 140px;display:flex;align-items:center;gap:10px;min-width:140px;font:400 12px var(--mono);color:var(--term-dim)}
+input[type=range]{flex:1;accent-color:var(--term-acc);min-height:40px;margin:0;background:transparent}
+.cmdrow{display:flex;flex-wrap:wrap;gap:10px;align-items:stretch;margin:16px 0 0}
+.cmd{flex:1 1 300px;min-width:0;background:var(--surface);border:1px solid var(--line);padding:9px 12px;font:400 13px/1.5 var(--mono);overflow-x:auto;white-space:nowrap;display:flex;align-items:center}
+.cmd b{color:var(--ink-soft);font-weight:400;margin-right:8px}
+#copy .when-done,#copy .when-fail{display:none}
+#copy[data-done="1"] .when-idle,#copy[data-done="0"] .when-idle{display:none}
+#copy[data-done="1"] .when-done,#copy[data-done="0"] .when-fail{display:inline}
+.cap{margin:16px 0 0;font-size:14px;color:var(--ink-soft);max-width:78ch}
+.cap code{font:400 13px var(--mono);color:var(--ink)}
+.keys{margin:6px 0 0;font:400 12px var(--mono);color:var(--ink-soft)}
+.sr{position:absolute;left:-999px}
+@media (max-width:560px){#term,#probe{font-size:12px}.bar .grp button{padding:0 9px}.lead{font-size:16px}}
+@media (prefers-reduced-motion:reduce){*{scroll-behavior:auto}}
+</style>
+</head>
+<body>
+<div class="wrap">
+ <div class="top"><span>BLOCKWISE</span><span><a id="langlink" href="?lang=zh">中文</a></span></div>
+ <h1><span class="e">The terminal, in your browser</span><span class="z">浏览器里的终端</span></h1>
+ <p class="lead"><span class="e">This is the instrument you would run over SSH, drawn by the same code. Press 1 to 5 to change page, or use the buttons.</span><span class="z">这就是你在 SSH 里会用到的那块仪表，由同一份代码绘制。按 1 到 5 切换页面，也可以点按钮。</span></p>
+
+ <div class="pages" role="group" aria-label="Pages">
+  <button data-page="1" aria-pressed="true"><span class="k">1</span><span class="e">overview</span><span class="z">总览</span></button>
+  <button data-page="2" aria-pressed="false"><span class="k">2</span><span class="e">blocks</span><span class="z">区块</span></button>
+  <button data-page="3" aria-pressed="false"><span class="k">3</span><span class="e">generalisation</span><span class="z">泛化</span></button>
+  <button data-page="4" aria-pressed="false"><span class="k">4</span><span class="e">operators</span><span class="z">算子</span></button>
+  <button data-page="5" aria-pressed="false"><span class="k">5</span><span class="e">cost &amp; health</span><span class="z">成本与健康</span></button>
+  <button data-page="help" aria-pressed="false" aria-label="Help"><span class="k">?</span><span class="e">help</span><span class="z">帮助</span></button>
+ </div>
+
+ <div class="win">
+  <div class="chrome"><i></i><i></i><i></i><span>blockwise watch --replay run.jsonl</span><span class="sz" id="title-size">100×32</span></div>
+  <div id="screen"><pre id="term" role="img" aria-label="Terminal replay of a Blockwise testnet run. Use the page buttons to read each screen." tabindex="0"></pre><span id="probe">MMMMMMMMMM</span></div>
+  <div class="bar">
+   <button id="play" aria-pressed="true"><span class="e">Pause</span><span class="z">暂停</span></button>
+   <div class="grp" role="group" aria-label="Speed">
+    <button data-speed="6" aria-pressed="false">6×</button>
+    <button data-speed="24" aria-pressed="true">24×</button>
+    <button data-speed="96" aria-pressed="false">96×</button>
+   </div>
+   <label class="scrub"><span class="sr">Position</span><input id="scrub" type="range" min="0" max="1" step="100" value="0"><span id="meter">0:00</span></label>
+  </div>
+ </div>
+ <p class="keys"><span class="e">keys: 1-5 pages, ? help, space pause, + / - speed, left / right step page</span><span class="z">按键：1-5 换页，? 帮助，空格 暂停，+ / - 调速，左 / 右 翻页</span></p>
+
+ <div class="cmdrow">
+  <div class="cmd"><b>$</b><span id="cmd">bun install &amp;&amp; bun run orch watch --replay fixtures/testnet-run-2.jsonl</span></div>
+  <button id="copy"><span class="when-idle"><span class="e">Copy install command</span><span class="z">复制安装命令</span></span><span class="when-done"><span class="e">Copied</span><span class="z">已复制</span></span><span class="when-fail"><span class="e">Select it and copy</span><span class="z">请手动选中复制</span></span></button>
+ </div>
+ <p class="cap"><span class="e">Recorded replay of a real testnet run; run it yourself: <code>blockwise watch --replay run.jsonl</code>. The numbers are test MON on a test chain; nothing here is a trading result.</span><span class="z">这是一次真实测试网运行的录像回放；你也可以自己运行：<code>blockwise watch --replay run.jsonl</code>。数字是测试链上的测试 MON，不是交易结果。</span></p>
+</div>
+<script>
+(function(){var q=new URLSearchParams(location.search).get("lang");if(q==="zh"){document.documentElement.classList.add("zh");document.documentElement.lang="zh-CN";document.title="浏览器里的终端";var a=document.getElementById("langlink");a.textContent="English";a.href="?";}})();
+</script>
+<script>var __EVENTS__ = {{DATA}};</script>
+<script>{{SCRIPT}}</script>
+</body>
+</html>

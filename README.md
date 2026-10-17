@@ -2,41 +2,107 @@
 
 **A colony of trading agents you can fund, judged on-chain.**
 
-[Start here](#start-here) · [How it works](#how-it-works) · [What you will see](#what-you-will-see) · [Verification](#verification) · [Quick start](#quick-start) · [Documentation](#documentation) · [Roadmap](#roadmap) · [中文](README.zh-CN.md)
+[Status](#status-what-is-real) · [Quick start](#quick-start) · [How it works](#how-it-works) · [Contributing](#contributing) · [Documentation](#documentation) · [中文](README.zh-CN.md)
 
-Status: **v0, built for Monad Blitz Shanghai (2026-10-17).** Testnet only: test MON, no real funds, no financial advice. The contracts compile; nothing has been tested or deployed yet ([surfaces](docs/surfaces.md)).
+Status: **v0, built for Monad Blitz Shanghai (2026-10-17).** Testnet only: test MON, no real funds, no financial advice.
 
 > There is a tide in the affairs of men,
 > Which, taken at the flood, leads on to fortune;
 > Omitted, all the voyage of their life
 > Is bound in shallows and in miseries.
 > — Shakespeare, *Julius Caesar*, IV.iii
->
-> 乐观时变……趋时若猛兽挚鸟之发。
-> — 司马迁，《史记·货殖列传》（白圭）
 
-A block is a tide. Most trading agents meet it late: after the fact, in a backtest, scored by the same hand that proposed them.
-Blockwise puts a colony of small, cheap, fallible agents in front of the tide and lets a contract keep the score. The contract is the
-only thing allowed to write the ledger, so no agent can grade itself. Nobody writes the strategies down: they are kept, or dropped, by what the ledger says they did.
-And you may bring a wallet and put test MON behind the agents you believe in.
+## What it is
 
-"Wise" in block-wise means *by the block*; it also means judgement: every verdict here is made by something that cannot be argued with.
+Strategies are seven small integers. A contract on Monad (the `Evaluator`) replays a frozen return series in integer arithmetic and is the only thing allowed to write the `Ledger`, so no proposer can grade itself.
+An off-chain orchestrator proposes hundreds of candidates per generation, sends them as independent `evaluate` transactions from many wallets, and shows what actually landed: N evaluations in B blocks, with explorer links.
+Held-out data is shown honestly: dev (many looks), confirm (one look), sealed (one look, ever), side by side.
 
-## Start here
+What we claim is narrow: **parallel on-chain evaluation on Monad, and honest held-out scoring.** We do **not** claim that the colony finds better strategies than random search (see the benchmark below).
 
-| I want to | go to |
+## Status: what is real
+
+Measured on 2026-10-17. Numbers come from files in this repo; commands are in [monad-notes](docs/monad-notes.md) and [surfaces](docs/surfaces.md).
+
+| Item | State | Evidence |
+|---|---|---|
+| Ledger, Evaluator, JudgeLog deployed on Monad testnet (chain 10143) | **done** | [`config/deployments.testnet.json`](config/deployments.testnet.json), deploy block 71769889 |
+| Contract tests | **43 pass** | `cd contracts && forge test` |
+| TS mirror vs Solidity, golden vectors | **200 / 200 agree** | `data/golden.json` |
+| Gas of one `evaluate` | **145k** in Foundry; **~177-183k** by `eth_estimateGas` on testnet | Monad charges the gas *limit*, and receipts report `gasUsed == limit`, so the receipt is not a measurement ([monad-notes](docs/monad-notes.md)) |
+| Smoke: 100 evaluations | **100 / 100 landed in 8 blocks** | `bun run orch smoke` |
+| Run 1 (10 generations x 100) | **measured, partly broken** | [`fixtures/testnet-run-1.jsonl`](fixtures/testnet-run-1.jsonl): see below |
+| Run 2 | **see "Run 2 results"** | placeholder below |
+| Offline benchmark, colony vs random | **colony did not win** | see below |
+| Jev shadow judge | **stand-in only** (labelled in the stream: `model: "stand-in"`) | no TypeSafe key was used; Jev's calibration is unmeasured |
+| Allocator escrow (funding) | **tested, not deployed** | invariant test, 256 runs; no deployed address; funding UI is not live |
+| Commit-reveal sealed data, real return series, agent proposer, real funds | not done | [roadmap](docs/roadmap.md) |
+
+Deployed contracts (Monad testnet):
+
+| Contract | Address |
 |---|---|
-| see what it is and why | [proposal](docs/proposal.md) · [faq](docs/faq.md) |
-| fund an agent (testnet) | [Funding](#funding) · [architecture §3b](docs/architecture.md) |
-| know how the colony searches | [How it works](#how-it-works) · [architecture §3a](docs/architecture.md) |
-| know what it holds true | [principles](docs/principles.md) |
-| see what runs, and how far to trust it | [surfaces](docs/surfaces.md) |
-| understand the parts, the scoring spec and the event stream | [architecture](docs/architecture.md) · [contracts](docs/contracts.md) |
-| use the CLI or the terminal interface | [cli](docs/cli.md) · [tui](docs/tui.md) |
-| know what we rely on about Monad, and how it is checked | [monad-notes](docs/monad-notes.md) |
-| understand Jev, Jev Trader and the shadow judge | [jev](docs/jev.md) |
-| see the demo and the screen | [presentation](docs/presentation.md) |
-| help build it | [roadmap](docs/roadmap.md) · [CONTRIBUTING](CONTRIBUTING.md) |
+| Ledger | [`0xd969065bbba31acaba1fc77412edba536a950a72`](https://testnet.monadvision.com/address/0xd969065bbba31acaba1fc77412edba536a950a72) |
+| Evaluator | [`0x1c62887bc176ee2270c21910e8c26ecc91a8c708`](https://testnet.monadvision.com/address/0x1c62887bc176ee2270c21910e8c26ecc91a8c708) |
+| JudgeLog | [`0x6569c6579e850b6279c298c2722b682a711e095d`](https://testnet.monadvision.com/address/0x6569c6579e850b6279c298c2722b682a711e095d) |
+
+Epoch `0xa8e53e1e5e48b1497bbb0fae34c3414cb41c57cfb9d690728bc1493514efe0a0` (dev 0-127, confirm 128-159, sealed 160-191, spec version 1, cost 3 bps).
+
+### Offline benchmark: the colony did not beat random search
+
+`bun run scripts/bench.ts` (TS mirror, synthetic series, 12 seeds, 100 x 6 dev evaluations per arm; random 2x gets double). Median basis points, sealed segment:
+
+| Arm | Sealed (median) |
+|---|---|
+| portfolio (the colony) | 179 |
+| random 1x | 216 |
+| random 2x | 220 |
+| niche evolution only | 172 |
+
+The portfolio beat random 2x on sealed in 1 of 12 paired seeds. The space is seven integers, and random search is hard to beat in it. We report this as a null result and do not hide it.
+The ceiling proxy (a 20,000-evaluation offline hill-climb) reaches sealed 168, below the portfolio's median: the sealed segment is short (32 steps) and noisy, so these differences are small against their noise.
+
+### Run 1 (fixtures/testnet-run-1.jsonl)
+
+1,000 candidate evaluations sent over 10 generations, 20 wallets: 996 landed successfully, 4 lost; each generation spanned about 8 blocks. **The confirm step reverted** (72 reverts out of 1,068 evaluation transactions in total), so no champion was chosen and the sealed look was not spent.
+The root cause is being fixed separately; do not read run 1 as a held-out result. It is a valid record of parallel dev evaluation.
+
+### Run 2 results
+
+_Placeholder: to be filled from `fixtures/testnet-run-2.jsonl` if it exists when this is read. Not run / not yet available._
+
+## Quick start
+
+Requirements: [Bun](https://bun.sh) >= 1.1, [Foundry](https://getfoundry.sh) >= 1.8, git. No wallet is needed to watch a replay.
+
+```bash
+git clone --recurse-submodules <this repo> && cd blockwise
+bun install
+bun run orch watch --replay fixtures/testnet-run-1.jsonl   # replay a recorded testnet run in the terminal
+(cd apps/web && bun run build)                              # build the web view
+bun test packages/core && (cd contracts && forge test)      # tests
+```
+
+Live runs need a funded burner wallet on Monad testnet (chain id 10143, RPC `https://testnet-rpc.monad.xyz`); keep the mnemonic in `~/.blockwise/testnet.json` (mode 0600) or an untracked `.env`, never in the repo ([SECURITY](SECURITY.md)). Live dashboard: _link to be added_.
+
+Known defect: the compiled binary's `deploy` command resolves `REPO_ROOT` wrongly; use `bun run orch deploy` from the repo ([open](docs/open.md)).
+
+## Brand
+
+Logos, wordmarks and favicons are in [`brand/`](brand/) (`logo.svg`, `lockup.svg`, `wordmark.svg`, dark variants). There is no brand guide yet; use the files as they are.
+
+## Contributing
+
+Read [AGENTS.md](AGENTS.md) and [CONTRIBUTING.md](CONTRIBUTING.md) first. The invariants, in short:
+
+- **No keys, no mainnet.** Never log, print, commit or screenshot a private key or mnemonic. Nothing in this repo touches mainnet.
+- **Golden vectors.** The Solidity Evaluator and the TypeScript mirror must agree on every vector in `data/golden.json`. Change one, change the other and the vectors, bump `SPEC_VERSION`, update [architecture §1](docs/architecture.md).
+- Only the bound Evaluator writes the Ledger; records are write-once. Out-of-range specs revert, never clamp.
+- `packages/core` has no I/O and no `Math.random()`.
+- The Allocator is not deployed until its tests are green. Judges are shadow by default.
+- A check you did not run is written "Not run: reason".
+
+Open work, ranked: [roadmap](docs/roadmap.md) and [open questions](docs/open.md). Submission text and judge Q&A: [docs/submission.md](docs/submission.md).
 
 ## How it works
 
@@ -56,7 +122,7 @@ Four kinds of thing, kept apart on purpose: what **proposes**, what **judges**, 
 - **Strategies** are seven small integers: six weights on recent returns and a threshold. Small enough to evaluate inside the EVM.
 - **The judge** replays a frozen return series in integer arithmetic and writes the score to the Ledger.
 - **A generation** is hundreds of independent `evaluate` calls sent from many wallets at once. Monad runs independent transactions in parallel, so a generation should land in a handful of blocks.
-  That is assumption A1 in [monad-notes](docs/monad-notes.md): **not yet measured**. The screen shows the measured number.
+  Measured on testnet: 100 of 100 smoke evaluations landed in 8 blocks ([monad-notes](docs/monad-notes.md)). The screen shows the measured number.
 - **Jev**, a System One model, predicts which candidates will win *before* the results exist; the prediction is logged on-chain and refused afterwards. Its authority is earned by calibration, never granted.
 
 ### Layers: effort goes where the evidence points
@@ -79,6 +145,8 @@ We do not assume a summit exists. An offline search with the TypeScript mirror g
 
 ### Funding
 
+> Status: the `Allocator` is tested but **not deployed**, and the funding UI is not live. This section describes the design.
+
 Connect a wallet on Monad testnet, deposit test MON into the `Allocator` escrow, and allocate it to agents in the Ledger.
 
 - **Withdrawable at any time.** The escrow never pays out to anyone but the depositor; there is no pool, no lock and no payout from other users' deposits.
@@ -89,7 +157,7 @@ Connect a wallet on Monad testnet, deposit test MON into the `Allocator` escrow,
 
 ## What you will see
 
-A single screen; motion is the content ([presentation](docs/presentation.md)). **A sketch of the planned screen, not output from a run:**
+A single screen; motion is the content ([presentation](docs/presentation.md)). **A sketch of the screen, not output from a run (the funding panel is not live):**
 
 ```
  Blockwise  ● live   block 71,750,141   epoch 0x3fa9…   [Jev: stand-in]   gen 6 / 10      wallet 0x7a…c1  funded 12.0
@@ -109,28 +177,10 @@ landed in blocks  ▮▮▮▮▮▮▮▮▮   N evals in B blocks
 - counters: evaluations, blocks spanned, gas, Jev spend; and the Jev calibration meter, labelled *shadow* until it has earned more;
 - the funding panel: who is funded, by how much, and the virtual return, labelled as such.
 
-## Verification
-
-Written before the checks exist, so that "not run" is a stated fact and not a silence.
-
-| Claim | Checked by | State |
-|---|---|---|
-| Only the bound Evaluator can write the Ledger; records are write-once | Foundry tests ([contracts](docs/contracts.md), "Tests the contracts must pass") | **not run** |
-| The TypeScript mirror and the Solidity Evaluator agree on every score | golden vectors, 200 specs, three roles | **not run** |
-| The Allocator escrow only ever returns a deposit to its depositor, and withdraw is always possible | Foundry tests incl. a reentrancy attempt and a fuzz of deposit/allocate/withdraw sequences | **not written** |
-| A generation lands in a few blocks | `smoke` at 20, 100, 200 evaluations ([monad-notes](docs/monad-notes.md) A1) | **not run** |
-| The colony beats random search at equal budget, and the niche archive beats a single global elite | the pre-registered [benchmark](docs/benchmark.md) | **not run** |
-| Jev is better than the base rate | shadow log, Brier score ([open questions](docs/open.md) 5) | **not run** |
-
-## First measurement
-
-None yet. Every number will be measured, dated, and recorded in [monad-notes](docs/monad-notes.md) with the command that produced it. The only things measured so far are the testnet's chain id (10143),
-block gas limit (150,000,000), base fee floor (100 gwei) and priority fee (2 gwei), on 2026-10-17.
-
 ## Layout
 
 ```
-contracts/          Foundry project: Ledger, Evaluator, JudgeLog (written); Allocator (planned)
+contracts/          Foundry project: Ledger, Evaluator, JudgeLog (deployed on testnet); Allocator (tested, not deployed)
 domains/            Domain contracts (task declarations), see docs/contracts.md Part B
 config/             Deployment addresses per chain (no secrets)
 fixtures/           Sample event streams for building the UI without a chain
@@ -142,21 +192,6 @@ apps/web/           Live view and wallet funding (React, served by Bun)
 data/               Frozen return series and golden test vectors
 docs/               Everything else
 ```
-
-## Quick start
-
-Requirements: [Bun](https://bun.sh) ≥ 1.1, [Foundry](https://getfoundry.sh) ≥ 1.8, git.
-
-```bash
-git clone --recurse-submodules <this repo> && cd blockwise
-bun install
-cd contracts && forge build && forge test && cd ..   # forge-std is a git submodule: use --recurse-submodules, or `git submodule update --init`
-bun test packages/core
-```
-
-Testnet wallet (never commit keys, see [SECURITY](SECURITY.md)): keep the mnemonic in `~/.blockwise/testnet.json` (mode 0600) or an untracked `.env` (`cp .env.example .env`).
-Monad testnet: chain id `10143`, public RPC `https://testnet-rpc.monad.xyz`. Test MON from the faucet linked on the event page.
-Use a burner wallet for anything you connect to the web view.
 
 ## Documentation
 
@@ -176,17 +211,7 @@ Use a burner wallet for anything you connect to the web view.
 
 ## Roadmap
 
-Dated plan, workstreams and the issue backlog: [docs/roadmap.md](docs/roadmap.md).
-
-- [ ] contracts tested, gas measured, TypeScript mirror conformance-tested
-- [ ] testnet smoke: 20, 100, 200 evaluations; the landing-block histogram recorded
-- [ ] generation loop, niche archive, Thompson bandit, confirm and sealed looks, live view, replay
-- [ ] `Allocator` escrow, wallet connect, funding steers the next generation
-- [ ] Jev shadow judge and its calibration meter
-- [ ] path potential for niches; ceiling proxy from the offline search
-- [ ] a live per-block stage (agents marked to market every block), if it earns its place
-- [ ] sealed data as commit-reveal; real return series; multiple environments
-- [ ] real funds: a real market (Kuru), settlement, audit, risk limits. **Not before all of the above, and not in v0.**
+Ranked next steps: [docs/roadmap.md](docs/roadmap.md).
 
 ## Acknowledgements
 

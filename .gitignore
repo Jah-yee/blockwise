@@ -13,3 +13,5 @@ dist/
 *.log
 runs/*.jsonl
 !runs/.gitkeep
+apps/orchestrator/dist-pack/*.tgz
+apps/orchestrator/dist-pack/blockwise-*
