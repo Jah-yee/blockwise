@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { init, reduce, type State, type Cell } from "./state";
 import { pickSource } from "./source";
-import { DICT, pickLang, type Dict, type Lang } from "./i18n";
+import { DICT, SDICT, pickLang, type Dict, type Lang, type SD } from "./i18n";
 import { lanes, coarseTs, opStats, planGens, generalization, health, cost, bestSoFar } from "./derive";
 
 // Active dictionary; assigned in App before children render.
@@ -395,10 +395,140 @@ function Proves({ s, kind, fixture }: { s: State; kind: string; fixture: boolean
   );
 }
 
+let S: SD = SDICT.en;
+
+function Sec({ id, n, h, q, children }: { id: string; n?: number; h: string; q?: string; children: React.ReactNode }) {
+  return (
+    <section className="sec" id={id} aria-labelledby={id + "-h"}>
+      <div className="sec-in">
+        <header className="sh">{n !== undefined && <span className="mono sn">{String(n).padStart(2, "0")}</span>}<h2 id={id + "-h"}>{h}</h2>{q && <p className="q">{q}</p>}</header>
+        {children}
+      </div>
+    </section>
+  );
+}
+
+const IC = { fill: "none", stroke: "currentColor", strokeWidth: 2, strokeLinecap: "round", strokeLinejoin: "round" } as const;
+function Icon({ i }: { i: number }) {
+  return (
+    <svg viewBox="0 0 96 64" className="ic" aria-hidden="true" {...IC}>
+      {i === 0 && <g>{[14, 30, 46, 62, 78].map((x, k) => <circle key={x} cx={x} cy={k % 2 ? 22 : 38} r="5" />)}<path d="M14 54h68" opacity=".4" /></g>}
+      {i === 1 && <g><rect x="34" y="14" width="28" height="36" rx="3" /><path d="M42 26h12M42 34h12M42 42h6" /><path d="M6 32h20m-6-6l6 6-6 6M70 32h20m-6-6l6 6-6 6" /></g>}
+      {i === 2 && <g>{[0, 1, 2].map((r) => [0, 1, 2].map((c) => <rect key={r * 3 + c} x={20 + c * 20} y={8 + r * 16} width="14" height="11" rx="2" opacity={r === 1 && c === 1 ? 1 : .35} />))}<path d="M43 38l3 3 7-7" /></g>}
+      {i === 3 && <g><path d="M8 48c14-4 20-26 32-24s16 14 24 6" opacity=".5" /><path d="M52 40c8 2 14-6 20-14s10-6 16-4" strokeDasharray="4 5" /><circle cx="52" cy="40" r="3.5" /></g>}
+    </svg>
+  );
+}
+
+function StatusRow({ s, badge, bad }: { s: State; badge: string; bad: boolean }) {
+  const t = s.totals; const N = s.hello?.config.generations;
+  const landed = Object.values(s.cands).filter((c) => c.status).length;
+  const rev = t?.reverted ?? Object.values(s.cands).filter((c) => c.status === "reverted").length;
+  const lost = t?.lost ?? Object.values(s.cands).filter((c) => c.status === "lost").length;
+  const items: [string, React.ReactNode][] = [
+    [S.st_block, s.block ? fmt(s.block) : "-"],
+    [S.st_gen, s.count ? `${s.gen - s.base + 1} / ${N ?? "?"}` : "-"],
+    [S.st_evals, fmt(t?.evals ?? landed)],
+    [S.st_bad, `${fmt(rev)} / ${fmt(lost)}`],
+    [S.st_gas, fmt(t?.gasMon ?? 0, 3)],
+  ];
+  return (
+    <div className="status" role="status">
+      <dl>{items.map(([k, v]) => <div key={k}><dt className="mono">{k}</dt><dd className="mono">{v}</dd></div>)}</dl>
+      <p className={"badge mono" + (bad ? " warn" : "")}><i className="dot" />{badge}</p>
+    </div>
+  );
+}
+
+function Bars({ s }: { s: State }) {
+  const ge = s.ends[s.gen];
+  const h = ge ? ge.blocks.histogram : s.liveHist;
+  const keys = Object.keys(h).map(Number).sort((a, b) => a - b);
+  const mx = Math.max(1, ...keys.map((k) => h[k] ?? 0));
+  if (!keys.length) return <p className="muted">{S.run_wait}</p>;
+  return (
+    <div className="bars" role="img" aria-label={T.blocks_title}>
+      {keys.map((k) => (
+        <div key={k} className="bcol"><span className="mono bv">{fmt(h[k])}</span><div className="bt"><i style={{ height: `${((h[k] ?? 0) / mx) * 100}%` }} /></div><span className="mono bl">{String(k).slice(-3)}</span></div>
+      ))}
+    </div>
+  );
+}
+
+function RunBlock({ s }: { s: State }) {
+  const t = s.totals;
+  const landed = Object.values(s.cands).filter((c) => c.status === "success" || c.status === "reverted").length;
+  const blocks = new Set(Object.values(s.cands).map((c) => c.block).filter((b): b is number => b !== undefined)).size;
+  return (
+    <>
+      <div className="big3">
+        <div><b className="mono num">{fmt(t?.evals ?? landed)}</b><span>{S.n_evals}</span></div>
+        <div><b className="mono num">{fmt(blocks)}</b><span>{S.n_blocks}</span></div>
+        <div><b className="mono num">{fmt(t?.gasMon ?? 0, 3)}</b><span>{S.n_gas}</span></div>
+      </div>
+      <Bars s={s} />
+      <p className="cap2">{S.run_sentence(s.gen - s.base + 1)}</p>
+    </>
+  );
+}
+
+function Verdict({ s }: { s: State }) {
+  const bs = bestSoFar(s);
+  let v = S.v_wait, ok: boolean | undefined;
+  if (bs.best && bs.b1 !== undefined && bs.b2 !== undefined) {
+    ok = bs.best.dev > Math.max(bs.b1, bs.b2);
+    v = (ok ? S.v_beat : S.v_not)(fmt(bs.best.dev), fmt(bs.b2), fmt(bs.b1));
+  }
+  return <p className={"verdict" + (ok === false ? " warn" : "")}>{v}</p>;
+}
+
+function GenBlock({ s }: { s: State }) {
+  const g = generalization(s);
+  const none = g.rows.length === 0 && s.sealedAll.length === 0;
+  const rev = s.errLog.filter((e) => e.scope === "confirm" && /revert/i.test(e.message)).length;
+  const lost = s.errLog.filter((e) => e.scope === "confirm" && /\blost\b/i.test(e.message)).length;
+  return (
+    <>
+      <div className="bare"><Champion s={s} /></div>
+      {none && <p className="verdict warn">{s.count && s.ends[s.gen] || Object.keys(s.ends).length ? S.g_none(g.attempts, g.confirmed, rev, lost) : S.g_wait}</p>}
+    </>
+  );
+}
+
+function Wrong({ s }: { s: State }) {
+  const h = health(s);
+  const items: [string, number][] = [[S.w_rev, h.rev], [S.w_lost, h.lost], [S.w_conf, h.confirmRev + h.confirmLost]];
+  return (
+    <>
+      <div className="big3 small">{items.map(([k, v]) => <div key={k}><b className={"mono num" + (v ? " revert" : "")}>{fmt(v)}</b><span>{k}</span></div>)}</div>
+      {h.rows.length === 0 ? <p className="muted">{S.w_none}</p> : (
+        <div className="reasons2">
+          <h3 className="mono lab">{S.w_reasons}</h3>
+          <ul>{h.rows.slice(0, 5).map((r, i) => <li key={i}><b className="mono num revert">{fmt(r.count)}</b><span className="mono lab2">{T.hl_scope_v[r.scope] ?? r.scope} · {T.hl_cls[r.cls]}</span><span className="mono small">{r.sample}</span></li>)}</ul>
+          <p className="muted">{S.w_noreason}</p>
+        </div>
+      )}
+    </>
+  );
+}
+
+function Controls({ player, paused, speed, setSpeed, begin, force }: { player: ReturnType<typeof pickSource>; paused: boolean; speed: number; setSpeed: (x: number) => void; begin: () => void; force: React.Dispatch<React.SetStateAction<number>> }) {
+  if (!player.setSpeed) return null;
+  return (
+    <div className="ctl" role="group" aria-label={S.ctrl}>
+      <button className="pp" onClick={() => { player.togglePause?.(); force((n) => n + 1); }}>{paused ? X.resume : X.pause}</button>
+      {[1, 4, 16].map((x) => <button key={x} className={x === speed ? "on" : ""} aria-pressed={x === speed} onClick={() => setSpeed(x)}>{x}x</button>)}
+      <button onClick={() => { player.stepGen?.(-1); force((n) => n + 1); }} aria-label={T.prev_gen}>{X.prev}</button>
+      <button onClick={() => { player.stepGen?.(1); force((n) => n + 1); }} aria-label={T.next_gen}>{X.next}</button>
+      <button onClick={begin}>{T.restart}</button>
+    </div>
+  );
+}
+
 function App() {
   const player = useMemo(() => pickSource(), []);
   const [lang, setLang] = useState<Lang>(pickLang);
-  T = DICT[lang]; X = LX[lang];
+  T = DICT[lang]; X = LX[lang]; S = SDICT[lang];
   const [s, dispatch] = useReducer(reduce, undefined, init);
   const [status, setStatus] = useState("starting");
   const [speed, setSpeedS] = useState(1);
@@ -411,6 +541,8 @@ function App() {
   useEffect(() => {
     const f = (ev: KeyboardEvent) => {
       if (ev.metaKey || ev.ctrlKey || ev.altKey) return;
+      const t = ev.target as HTMLElement | null;
+      if (t && /^(INPUT|TEXTAREA|SUMMARY)$/.test(t.tagName) && ev.key === " ") return;
       const k = ev.key;
       if (k === " ") { ev.preventDefault(); player.togglePause?.(); force((n) => n + 1); }
       else if (k === "1") setSpeed(1); else if (k === "4") setSpeed(4); else if (k === "6") setSpeed(16);
@@ -428,48 +560,64 @@ function App() {
   const model = s.judgeModel ?? h?.model ?? "none";
   const down = status === "reconnecting";
   const fixture = !!h && /invalid|synthetic/i.test(h.explorer ?? "");
-  const stLabel: Record<string, string> = { connected: T.st_connected, reconnecting: T.st_reconnecting, "loading history": T.st_loading, "history unavailable": T.st_unavailable };
   const k = player.kind;
-  const srcName = k === "replay" ? T.src_replay : k === "live" ? T.src_live : T.src_demo;
-  const srcDetail = k === "replay" ? (fixture ? T.badge_fixture + ": " + T.badge_fixture_d : T.badge_rec(String(h?.chainId ?? "?"))) : k === "live" ? `${T.src_live_d} (${stLabel[status] ?? status})` : T.src_demo_d;
+  const badge = k === "replay" ? (fixture ? S.badge_fixture : S.badge(String(h?.chainId ?? "?"))) : k === "live" ? S.badge_live : S.badge_demo;
   const paused = player.isPaused?.() ?? false;
+  const judgeLine = model === "jev" ? S.judge_model("jev") : model === "none" ? S.judge_none : S.judge_standin;
+  const lastGen = s.gen - s.base + 1;
   return (
-    <div className={"app " + lang}>
-      <header>
-        <div className="brand"><b>BLOCKWISE</b><span className="cap">{T.tagline}</span></div>
-        <div className={"src " + k + (down ? " down" : "") + (fixture || k === "demo" ? " synth" : "")} role="status"><i className="dot" /><b>{srcName}</b><span>{srcDetail}</span></div>
-        <div className="ctl">
-          <div className="seg" role="group" aria-label={T.language}>
-            {(["en", "zh"] as Lang[]).map((l) => <button key={l} className={l === lang ? "on" : ""} aria-pressed={l === lang} onClick={() => switchLang(l)}>{l === "en" ? "EN" : "中文"}</button>)}
-          </div>
-          {player.setSpeed && <div className="seg" role="group" aria-label={T.speed}>
-            <button onClick={() => { player.togglePause?.(); force((n) => n + 1); }}>{paused ? X.resume : X.pause}</button>
-            <button onClick={() => { player.stepGen?.(-1); force((n) => n + 1); }} aria-label={T.prev_gen}>{X.prev}</button>
-            <button onClick={() => { player.stepGen?.(1); force((n) => n + 1); }} aria-label={T.next_gen}>{X.next}</button>
-            {[1, 4, 16].map((x) => <button key={x} className={x === speed ? "on" : ""} aria-pressed={x === speed} onClick={() => setSpeed(x)}>{x}x</button>)}
-            <button onClick={begin}>{T.restart}</button>
-          </div>}
+    <div className={"story " + lang}>
+      <nav className="navbar"><span className="word">{S.wordmark}</span>
+        <div className="seg" role="group" aria-label={T.language}>
+          {(["en", "zh"] as Lang[]).map((l) => <button key={l} className={l === lang ? "on" : ""} aria-pressed={l === lang} onClick={() => switchLang(l)}>{l === "en" ? "EN" : "中文"}</button>)}
         </div>
-      </header>
+      </nav>
       {down && <div className="banner">{T.banner_down}</div>}
-      {s.errors[0] && k === "live" && <div className="banner">{s.errors[0]}</div>}
-      <main className="bento">
-        <Stats s={s} />
-        <Plate s={s} />
-        <Hist s={s} />
-        <Timeline s={s} />
-        <Champion s={s} />
-        <Tape s={s} />
-        <Curve s={s} />
-        <NicheMap s={s} />
-        <Dumbbell s={s} />
-        <Operators s={s} />
-        <Judge s={s} model={model} />
-        <Cost s={s} />
-        <Health s={s} />
-        <Proves s={s} kind={k} fixture={fixture} />
-      </main>
-      <footer className="cap">{T.foot} {k === "demo" ? T.foot_demo : ""} {fixture ? T.foot_fixture : ""} <span className="num">{X.stat_hint}{player.total ? " · " + T.progress(player.pos?.() ?? 0, player.total) : ""}</span></footer>
+      <section className="hero2">
+        <div className="hero-in">
+          <h1>{S.hero_line}</h1>
+          <StatusRow s={s} badge={badge} bad={fixture || k === "demo"} />
+          <div className="plate-wrap"><div className="bare calm"><Plate s={s} /></div><p className="cap2">{S.plate_cap}</p></div>
+          <Controls player={player} paused={paused} speed={speed} setSpeed={setSpeed} begin={begin} force={force} />
+        </div>
+      </section>
+
+      <Sec id="how" n={1} h={S.how_h} q={S.how_q}>
+        <ol className="steps">{S.steps.map((st, i) => (
+          <li key={i}><Icon i={i} /><span className="mono sn2">{i + 1}</span><h3>{st.t}</h3><p>{st.d}</p></li>
+        ))}</ol>
+        <p className="mono lab ill">{S.illus}</p>
+      </Sec>
+
+      <Sec id="run" n={2} h={S.run_h} q={S.run_q}><RunBlock s={s} /></Sec>
+      <Sec id="work" n={3} h={S.work_h} q={S.work_q}><div className="bare chartbox"><Curve s={s} /></div><Verdict s={s} /></Sec>
+      <Sec id="gen" n={4} h={S.gen_h} q={S.gen_q}><GenBlock s={s} /></Sec>
+      <Sec id="wrong" n={5} h={S.wrong_h} q={S.wrong_q}><Wrong s={s} /></Sec>
+
+      <Sec id="more" n={6} h={S.more_h} q={S.more_q}>
+        <details className="more">
+          <summary>{S.more_hint}</summary>
+          <div className="more-grid">
+            <NicheMap s={s} /><Operators s={s} /><Tape s={s} /><Cost s={s} /><Judge s={s} model={model} /><Timeline s={s} />
+          </div>
+        </details>
+      </Sec>
+
+      <Sec id="read" n={7} h={S.read_h}>
+        <ul className="plain">{S.read.map((x, i) => <li key={i}>{x}</li>)}</ul>
+        <h3 className="h3b">{S.proves_h}</h3>
+        <div className="bare"><Proves s={s} kind={k} fixture={fixture} /></div>
+        <h3 className="h3b">{S.faq_h}</h3>
+        <div className="faq">{S.faq.map((f, i) => (
+          <details key={i}><summary>{f.q}</summary><p>{f.a}{i === 3 ? " " + judgeLine : ""}</p></details>
+        ))}</div>
+      </Sec>
+
+      <footer className="foot">
+        <p>{S.disc}</p>
+        <p>{T.foot} {k === "demo" ? T.foot_demo : ""} {fixture ? T.foot_fixture : ""}</p>
+        <p className="mono small">{X.stat_hint}{player.total ? " · " + T.progress(player.pos?.() ?? 0, player.total) : ""}{s.count ? ` · ${T.gen_word} ${lastGen}` : ""}</p>
+      </footer>
     </div>
   );
 }
