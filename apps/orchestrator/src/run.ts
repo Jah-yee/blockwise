@@ -4,13 +4,15 @@ import { NonceBook, evaluatorAbi, fanOut, landingReport, loadDeployment, readSta
 import { randomBaseline, type Candidate, type Colony, type ColonyConfig, type EvalRecord, type Operator, type Ref } from "@blockwise/core";
 import type { Bus } from "./bus";
 import { loadGas } from "./gas";
-import { standInJudge } from "./judge";
+import { judgeGenerationJev, judgeGenerationStandIn, newStats } from "./judge/gen";
+import type { JevConfig } from "./judge/jev";
 
 export interface RunOpts {
   gens: number; perGen: number; workers: number; confirmK: number; seed: number; gasPrice: bigint;
   series: { devEnd: number; confirmEnd: number; returns: number[] };
   makeColony: (cfg: ColonyConfig) => Colony;
-  judge: "off" | "stand-in";
+  judge: "off" | "stand-in" | "jev";
+  jev?: JevConfig; // required when judge is "jev" (cli.ts builds it from TYPESAFE_AI_API_KEY)| "stand-in";
   timeoutMs?: number;
   stop?: { flag: boolean };
   log: (s: string) => void;
@@ -39,7 +41,7 @@ export async function runLoop(ctx: Ctx, wallets: Wallets, bus: Bus, o: RunOpts):
   const spec = new Map<string, number[]>();
   const rk = (gen: number, idx: number) => `${gen}:${idx}`;
 
-  const model = o.judge === "stand-in" ? "stand-in" : "none";
+  const model = o.judge === "stand-in" ? "stand-in" : o.judge === "jev" ? "jev" : "none";
   bus.emit({
     type: "hello", epoch: dep.epoch, chainId: ctx.chainId,
     contracts: { evaluator, ledger: dep.contracts.ledger, judgeLog: dep.contracts.judgeLog },
@@ -62,8 +64,9 @@ export async function runLoop(ctx: Ctx, wallets: Wallets, bus: Bus, o: RunOpts):
 
   const baseline = randomBaseline({ returns: o.series.returns, roles: { devEnd: o.series.devEnd, confirmEnd: o.series.confirmEnd }, perGeneration: o.perGen, generations: o.gens, seeds: 5, seed: o.seed });
 
+  const JS = newStats(); let recentBest: number[] = []; let bestSoFar: number | null = null;
   const T = { evals: 0, reverted: 0, lost: 0, gasWei: 0n, blocks: 0 };
-  const totals = () => bus.emit({ type: "totals", evals: T.evals, reverted: T.reverted, lost: T.lost, gasMon: Number(T.gasWei) / 1e18, jevUsd: 0, blocksSpanned: T.blocks });
+  const totals = () => bus.emit({ type: "totals", evals: T.evals, reverted: T.reverted, lost: T.lost, gasMon: Number(T.gasWei) / 1e18, jevUsd: JS.usd, blocksSpanned: T.blocks });
   const timeoutMs = o.timeoutMs ?? 60_000;
 
   const ensureFunds = async (txsPerWorker: number, totalTxs: number): Promise<boolean> => {
@@ -93,6 +96,22 @@ export async function runLoop(ctx: Ctx, wallets: Wallets, bus: Bus, o: RunOpts):
     for (const x of outs) { if (x.status === "lost") T.lost++; else { T.evals++; if (x.status === "reverted") T.reverted++; } if (x.sendState !== "failed") T.gasWei += BigInt(x.job.gas) * o.gasPrice; }
   };
 
+  // top-k confirm; also the catch-up path (resume with confirms missing, e.g. after out-of-gas confirms)
+  const confirmPhase = async () => {
+    const cands = colony.confirmCandidates().slice(0, o.confirmK);
+    if (cands.length) {
+      const cj: TxJob[] = cands.filter((c) => owner.has(rk(c.gen, c.idx))).map((c) => ({ key: rk(c.gen, c.idx), worker: owner.get(rk(c.gen, c.idx))!, to: evaluator, gas: gas.confirm, data: encodeFunctionData({ abi: evaluatorAbi, functionName: "confirm", args: [c.gen, c.idx, i16(c.spec) as any] }) }));
+      const co = await sendJobs(cj);
+      count(co);
+      for (const x of co) {
+        const [g, i] = x.job.key.split(":").map(Number) as [number, number];
+        const ev = x.status === "success" ? decodeFor(x, evaluator) : null;
+        if (ev?.eventName === "Confirmed") { colony.recordConfirm({ gen: g, idx: i }, Number(ev.args.score), Number(ev.args.trades)); bus.emit({ type: "confirm", gen: g, idx: i, score: Number(ev.args.score), trades: Number(ev.args.trades), txHash: x.hash }); }
+        else bus.emit({ type: "error", scope: "confirm", message: `confirm ${x.job.key} ${x.status} ${x.sendError ?? ""}`.trim() });
+      }
+    }
+  };
+
   let stopReason = "";
   for (let gen = lastGen + 1; gen <= o.gens; gen++) {
     if (o.stop?.flag) { stopReason = "stopped"; break; }
@@ -109,8 +128,10 @@ export async function runLoop(ctx: Ctx, wallets: Wallets, bus: Bus, o: RunOpts):
     });
     const byKey = new Map(plan.candidates.map((c) => [rk(c.gen, c.idx), c]));
 
-    if (o.judge === "stand-in") {
-      for (const c of plan.candidates.slice(0, Math.min(20, N))) bus.emit({ type: "judge", gen, idx: c.idx, ...standInJudge(c.spec, o.series.returns, o.series.devEnd) });
+    if (o.judge === "stand-in") judgeGenerationStandIn(plan.candidates.slice(0, Math.min(20, N)), { gen, threshold: 0, championDev: null, recentBest, archiveSize: null }, (e) => bus.emit(e), o.series.returns, o.series.devEnd);
+    else if (o.judge === "jev" && o.jev) {
+      const miss = await judgeGenerationJev(o.jev, plan.candidates, { gen, threshold: bestSoFar ?? 0, championDev: bestSoFar, recentBest, archiveSize: null }, (e) => bus.emit(e), JS);
+      if (miss) bus.emit({ type: "error", scope: "judge", message: miss });
     }
 
     const outs = await sendJobs(jobs, (signed) => {
@@ -138,28 +159,18 @@ export async function runLoop(ctx: Ctx, wallets: Wallets, bus: Bus, o: RunOpts):
     try { end = colony.endGeneration(gen); } catch (e) { bus.emit({ type: "error", scope: "endGeneration", message: `gen ${gen}: ${(e as Error).message}` }); totals(); continue; }
     bus.emit({ type: "generation_end", gen, best: end.best, archive: end.archive, bandit: end.bandit, blocks: { first: rep.first, last: rep.last, span: rep.span, histogram: rep.histogram } });
     bus.emit(end.map);
+    recentBest = [...recentBest, end.best.dev].slice(-5); bestSoFar = Math.max(bestSoFar ?? -Infinity, end.best.dev);
     const bl = baseline[gen - 1];
     if (bl) bus.emit({ type: "baseline", ...bl, gen });
 
-    // top-k confirm
-    const cands = colony.confirmCandidates().slice(0, o.confirmK);
-    if (cands.length) {
-      const cj: TxJob[] = cands.filter((c) => owner.has(rk(c.gen, c.idx))).map((c) => ({ key: rk(c.gen, c.idx), worker: owner.get(rk(c.gen, c.idx))!, to: evaluator, gas: gas.confirm, data: encodeFunctionData({ abi: evaluatorAbi, functionName: "confirm", args: [c.gen, c.idx, i16(c.spec) as any] }) }));
-      const co = await sendJobs(cj);
-      count(co);
-      for (const x of co) {
-        const [g, i] = x.job.key.split(":").map(Number) as [number, number];
-        const ev = x.status === "success" ? decodeFor(x, evaluator) : null;
-        if (ev?.eventName === "Confirmed") { colony.recordConfirm({ gen: g, idx: i }, Number(ev.args.score), Number(ev.args.trades)); bus.emit({ type: "confirm", gen: g, idx: i, score: Number(ev.args.score), trades: Number(ev.args.trades), txHash: x.hash }); }
-        else bus.emit({ type: "error", scope: "confirm", message: `confirm ${x.job.key} ${x.status} ${x.sendError ?? ""}`.trim() });
-      }
-    }
+    await confirmPhase();
     totals();
     o.log(`gen ${gen}/${o.gens}: ${rep.landed}/${N} landed over ${rep.span} block(s), best dev ${end.best.dev}`);
   }
 
-  // freeze champion (chosen on confirm), one sealed look
+  // catch-up confirms (no-op when every elite is already confirmed), then freeze champion (chosen on confirm), one sealed look
   if (!stopReason) {
+    await confirmPhase(); totals();
     const ch = colony.champion();
     if (ch && !sealedDone.has(rk(ch.gen, ch.idx)) && owner.has(rk(ch.gen, ch.idx))) {
       const j: TxJob = { key: rk(ch.gen, ch.idx), worker: owner.get(rk(ch.gen, ch.idx))!, to: evaluator, gas: gas.sealed, data: encodeFunctionData({ abi: evaluatorAbi, functionName: "sealedLook", args: [ch.gen, ch.idx, i16(ch.spec) as any] }) };

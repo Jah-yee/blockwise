@@ -187,3 +187,20 @@ Reference formats: candidate `GEN:IDX` (proposer implied by the wallet set), tx 
 Every read command has `--json` and meaningful exit codes. `blockwise top --once --json` (whole state), `best --json`, `show REF --json`, `log -n 50 --json`, `judge --json`, `doctor --json`.
 `workspace --out DIR` writes the history as files for an agent that prefers `grep` over an API (the Meta-Harness way, see [principles](principles.md)). Controls: `hint`, `pause`, `resume`.
 An agent must not write to the mirror directly, and must never be given a key; spending commands need `--yes` and a human-held wallet.
+
+
+## Install and packaging (blockwise-cli)
+
+`bun run --cwd apps/orchestrator pack` writes to `apps/orchestrator/dist-pack/`: an npm tarball `blockwise-cli-<version>.tgz` (one bundled file; needs Bun >= 1.1 on PATH), a single-file binary `blockwise-linux-x64` (needs nothing; other targets: `pack --targets bun-darwin-arm64,bun-darwin-x64,bun-linux-arm64,bun-windows-x64`), and `SHA256SUMS`.
+Both embed the contract artifacts and the series. Outside a repository checkout, state lives in `~/.blockwise` (`config/deployments.<net>.json`, `runs/`, artifacts); `deploy`, `smoke` and `run` accept `--artifacts DIR` / `--series FILE` (or `BLOCKWISE_ARTIFACTS`, `BLOCKWISE_SERIES`) to use other files. `BLOCKWISE_HOME` moves `~/.blockwise`.
+
+```bash
+npm i --ignore-scripts ./blockwise-cli-0.1.0.tgz && npx blockwise --version
+blockwise watch --replay node_modules/blockwise-cli/fixtures/events.sample.jsonl --frame
+```
+
+## init, the Jev judge, report --md
+
+- `blockwise init [--rpc URL] [--jev-model ID] [--judge jev|stand-in|off] [--key-stdin] [--save-key] [--yes]` writes `~/.blockwise/config.json` (0600). Interactive only on a TTY; the key is never echoed or put in that file. See [jev-key.md](jev-key.md).
+- `run --judge jev [--judge-timeout 8]`: real Jev shadow judge when `TYPESAFE_AI_API_KEY` is set, otherwise a message and the labelled stand-in. Misses are counted and shown (`error` events, scope `judge`); spend is in `totals.jevUsd`.
+- `report FILE --md` prints the report as markdown (`--json` and `--md` are exclusive).

@@ -13,6 +13,7 @@
   },
   "scripts": {
     "build": "bun run scripts/build.ts",
-    "web:build": "bun run scripts/build.ts"
+    "web:build": "bun run scripts/build.ts",
+    "dev": "bun run scripts/dev.ts"
   }
 }

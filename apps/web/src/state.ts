@@ -37,6 +37,7 @@ export interface State {
   discBy: Record<number, Record<string, number>>;
   errLog: ErrRow[];
   firstGen?: number;
+  t0?: number; tLast?: number;
 }
 export const init = (): State => ({
   gen: 0, base: 1, planned: 0, cells: [], block: 0, lastBlockEvals: 0, blockSeq: 0, liveHist: {}, ends: {}, baselines: {}, confirms: {},
@@ -49,7 +50,9 @@ export const ck = (gen: number, idx: number) => `${gen}:${idx}`;
 export function reduce(s: State, e: Action): State {
   if (e.type === "__reset") return init();
   if (e.type === "__seek") return e.events.reduce<State>((a, x) => reduce(a, x), init());
+  const tt = (e as { t?: number }).t;
   const n: State = { ...s, count: s.count + 1 };
+  if (typeof tt === 'number') { if (s.t0 === undefined) n.t0 = tt; n.tLast = tt; }
   switch (e.type) {
     case "hello": n.hello = e; break;
     case "generation_start":

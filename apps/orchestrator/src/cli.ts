@@ -9,6 +9,9 @@ import { runLoop } from "./run";
 import { smoke } from "./smoke";
 import { BOOL_FLAGS, COMMANDS, EXIT, UsageError, checkFlags, commandHelp, nearest, numFlag, usage } from "./cli-meta";
 import { cmdReport, cmdWatch } from "./tui/commands";
+import { cmdInit } from "./init";
+import { applyConfig, applyKeyFile, readConfig, runsDir, setupPaths } from "./home";
+import { jevConfigFromEnv, type JevConfig } from "./judge/jev";
 import pkg from "../package.json";
 
 function parse(argv: string[]) {
@@ -38,6 +41,8 @@ async function main() {
   if (bad) { err(bad); return EXIT.usage; }
   const num = (k: string, d: number) => numFlag(flags, k, d);
   if (flags.local) process.env.BLOCKWISE_ALLOW_OTHER_CHAIN = "1";
+  if (cmd === "init") return cmdInit(flags);
+  applyConfig(); applyKeyFile(); setupPaths(REPO_ROOT, flags); // ~/.blockwise/config.json defaults (env wins); packaged installs: artifacts and series paths
 
   if (cmd === "watch") return cmdWatch(flags);
   if (cmd === "report") return cmdReport(pos, flags);
@@ -51,6 +56,11 @@ async function main() {
     return 0;
   }
 
+  if (cmd === "deploy" || cmd === "run" || cmd === "smoke") {
+    if (cmd === "run" && typeof flags.judge === "string" && !["stand-in", "off", "jev"].includes(flags.judge)) throw new UsageError(`--judge must be stand-in, off or jev (got "${flags.judge}")`);
+    try { if (cmd === "deploy") { const { loadArtifact } = await import("@blockwise/chain"); for (const n of ["Ledger", "Evaluator", "JudgeLog"]) loadArtifact(n); } if (cmd !== "smoke") loadSeries(); }
+    catch (e) { err(`${(e as Error).message}\n  this install has no contract artifacts or series beside it. Pass --artifacts DIR (the forge contracts/out directory) and/or --series FILE, or set BLOCKWISE_ARTIFACTS / BLOCKWISE_SERIES.`); return 1; }
+  }
   const pool = new RpcPool(rpcUrlsFromEnv());
   let ctx;
   try { ctx = await connect(pool); } catch (e) {
@@ -91,17 +101,23 @@ async function main() {
     const bal = BigInt(await pool.request<string>("eth_getBalance", [wallets.deployer.address, "latest"]));
     if (bal < budget / 2n) { err(`deployer holds ${Number(bal) / 1e18} MON, less than half the budget; refusing (exit 4). Lower --gens/--per-gen or fund the deployer.`); return 4; }
     if (ctx.chainId === MONAD_TESTNET_ID && !flags.yes) { err("this spends testnet gas (see the budget above): re-run the same command with --yes to confirm"); return 4; }
-    mkdirSync(join(REPO_ROOT, "runs"), { recursive: true });
-    const file = join(REPO_ROOT, "runs", `${new Date().toISOString().replace(/[:.]/g, "-")}.jsonl`);
+    mkdirSync(runsDir(REPO_ROOT), { recursive: true });
+    const file = join(runsDir(REPO_ROOT), `${new Date().toISOString().replace(/[:.]/g, "-")}.jsonl`);
     const bus = new Bus({ stdout: true, file });
     const port = num("port", 8787);
     if (!flags["no-serve"]) { bus.serve(port); err(`SSE on http://localhost:${port}/events  history /history`); }
     err(`recording to ${file}`);
     const stop = { flag: false };
     for (const s of ["SIGINT", "SIGTERM"] as const) process.on(s, () => { err("stop requested; finishing the current step"); stop.flag = true; });
-    if (flags.judge !== undefined && flags.judge !== "off" && flags.judge !== "stand-in") err(`--judge ${flags.judge} is not wired yet; using stand-in (labelled). Valid values: stand-in, off`);
-    const judge = flags.judge === "off" ? "off" : "stand-in"; // Jev not wired: stand-in mock only, labelled
-    const reason = await runLoop(ctx, wallets, bus, { gens, perGen, workers, confirmK, seed: num("seed", 1), gasPrice, series, makeColony: createColony, judge, stop, log: err, timeoutMs: num("timeout", 60) * 1000 });
+    const want = typeof flags.judge === "string" ? flags.judge : (readConfig().jev?.judge ?? "stand-in");
+    if (flags.judge === true || !["stand-in", "off", "jev"].includes(want)) throw new UsageError(`--judge must be stand-in, off or jev (got "${flags.judge === true ? "" : want}")`);
+    let judge: "off" | "stand-in" | "jev" = want as any; let jev: JevConfig | undefined;
+    if (want === "jev") {
+      jev = jevConfigFromEnv(process.env, { timeoutMs: num("judge-timeout", 8) * 1000 }) ?? undefined;
+      if (!jev) { err("--judge jev needs TYPESAFE_AI_API_KEY (environment, or `blockwise init --save-key`); it is not set. Using the stand-in judge, labelled stand-in. See docs/jev-key.md"); judge = "stand-in"; }
+      else err(`judge: jev (model ${jev.model}, ${jev.timeoutMs} ms deadline per prediction, shadow only; a missed prediction is counted and never blocks the generation)`);
+    }
+    const reason = await runLoop(ctx, wallets, bus, { gens, perGen, workers, confirmK, seed: num("seed", 1), gasPrice, series, makeColony: createColony, judge, jev, stop, log: err, timeoutMs: num("timeout", 60) * 1000 });
     err(`run finished: ${reason}`);
     if (flags.hold) await new Promise(() => {});
     return 0;

@@ -10,7 +10,7 @@ import { keccak256 as k } from "viem";
 export const REPO_ROOT = resolve(import.meta.dir, "../../..");
 
 export interface Series { devEnd: number; confirmEnd: number; returns: number[]; n: number }
-export function loadSeries(file = join(REPO_ROOT, "data/series/v1.json")): Series {
+export function loadSeries(file = process.env.BLOCKWISE_SERIES ?? join(REPO_ROOT, "data/series/v1.json")): Series {
   const j = JSON.parse(readFileSync(file, "utf8"));
   return { devEnd: j.devEnd, confirmEnd: j.confirmEnd, returns: j.returns, n: j.returns.length };
 }
@@ -20,7 +20,7 @@ export function computeEpoch(s: Series, specVersion = 1, costBps = 3): Hex {
   return keccak256(encodeAbiParameters(parseAbiParameters("uint16, uint8, uint16, uint16, int16[]"), [specVersion, costBps, s.devEnd, s.confirmEnd, s.returns]));
 }
 
-export function loadArtifact(name: string, outDir = join(REPO_ROOT, "contracts/out")): { abi: Abi; bytecode: Hex } {
+export function loadArtifact(name: string, outDir = process.env.BLOCKWISE_ARTIFACTS ?? join(REPO_ROOT, "contracts/out")): { abi: Abi; bytecode: Hex } {
   const f = join(outDir, `${name}.sol`, `${name}.json`);
   if (!existsSync(f)) throw new Error(`artifact missing: ${f}. Run: cd contracts && forge build`);
   const j = JSON.parse(readFileSync(f, "utf8"));

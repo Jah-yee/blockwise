@@ -1,3 +1,7 @@
 { "name": "@blockwise/orchestrator", "version": "0.1.0", "private": true, "type": "module",
+  "license": "Apache-2.0",
+  "bin": { "blockwise": "./src/cli.ts" },
+  "scripts": { "pack": "bun run scripts/pack.ts" },
+  "engines": { "bun": ">=1.1.0" },
   "dependencies": { "@blockwise/core": "workspace:*", "@blockwise/chain": "workspace:*", "viem": "^2.21.0" },
   "optionalDependencies": { "ai": "^7.0.0", "@ai-sdk/typesafe-ai": "^3.0.0" } }

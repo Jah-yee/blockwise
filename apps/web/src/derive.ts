@@ -75,7 +75,7 @@ export function health(s: State) {
   const pending = cs.filter((c) => !c.status).length;
   const map = new Map<string, HealthRow>();
   for (const e of s.errLog) {
-    const cls = /revert/i.test(e.message) && !/0 reverted/.test(e.message) ? "reverted" : /\blost\b/i.test(e.message) ? "lost" : "other";
+    const cls = /revert/i.test(e.message) && !/\b0 reverted/.test(e.message) ? "reverted" : /\blost\b/i.test(e.message) ? "lost" : "other";
     const k = e.scope + "|" + (e.scope === "evaluate" ? "evaluate" : cls) + (cls === "other" ? "|" + e.message : "");
     const r = map.get(k) ?? { scope: e.scope, cls: (e.scope === "evaluate" ? "lost" : cls) as HealthRow["cls"], count: 0, gens: [], sample: e.message };
     r.count++; if (!r.gens.includes(e.gen)) r.gens.push(e.gen);

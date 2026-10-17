@@ -1,6 +1,7 @@
 // Command entry points for the terminal surfaces. cli.ts only dispatches here, so the CLI file stays small.
 import { numFlag, UsageError } from "../cli-meta";
 import { buildReport, formatReport } from "./report";
+import { formatReportMd } from "./report-md";
 import { SourceError, readEvents } from "./source";
 import { watch, type IO } from "./watch";
 
@@ -46,6 +47,7 @@ export function cmdReport(pos: string[], flags: Flags, io: Pick<IO, "out"> = { o
   try { events = readEvents(file); } catch (e) { if (e instanceof SourceError) throw new UsageError(e.message); throw e; }
   if (!events.length) throw new UsageError(`${file} has no events. Was the run stopped before the first generation?`);
   const r = buildReport(events, file);
-  io.out.write(flags.json ? JSON.stringify(r, null, 2) + "\n" : formatReport(r));
+  if (flags.json && flags.md) throw new UsageError("choose one of --json or --md.");
+  io.out.write(flags.json ? JSON.stringify(r, null, 2) + "\n" : flags.md ? formatReportMd(r) : formatReport(r));
   return 0;
 }
