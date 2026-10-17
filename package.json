@@ -1,0 +1,21 @@
+{
+  "name": "blockwise",
+  "private": true,
+  "type": "module",
+  "license": "Apache-2.0",
+  "workspaces": ["packages/*", "apps/*"],
+  "scripts": {
+    "test": "bun run test:core && bun run test:chain && bun run test:contracts",
+    "test:core": "bun test packages/core",
+    "test:chain": "bun test packages/chain",
+    "test:contracts": "cd contracts && forge test",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "gen:series": "bun run scripts/gen-series.ts",
+    "gen:golden": "bun run scripts/gen-golden.ts",
+    "orch": "bun run apps/orchestrator/src/cli.ts"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "typescript": "^5.6.0"
+  }
+}

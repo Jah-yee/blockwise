@@ -1,0 +1,45 @@
+# Domain contract for the v0 domain. Documented in docs/contracts.md Part B.
+# NOT READ BY ANY CODE YET (no loader exists); values must agree with docs/architecture.md section 1 and contracts/src/Evaluator.sol.
+
+[task]
+name        = "tiny linear strategies on a synthetic regime series"
+domain      = "trading_v1"
+description = "7 int16 params; walk-forward; score = PnL in bp"
+series      = "data/series/v1.json"           # hashed into the epoch
+spec_version = 1
+
+[objective]
+primary   = "dev"                              # name of the score used by search
+direction = "max"
+# A cap is a wall, not a price (principle 3). Here the walls are the grammar ranges below and the per-call gas limit.
+gas_limit_per_eval = 0                         # 0 = measure at smoke time and write it back (A2)
+
+[cascade]
+stages          = ["dev", "confirm", "sealed"]
+confirm_top_k   = 8                            # per generation
+champion_by     = "confirm"                    # champion chosen on confirm, not dev
+sealed_looks    = 1                            # per candidate, by its proposer
+
+[roles]                                        # earn ranges, see architecture section 1
+dev     = [6, 128]
+confirm = [128, 160]
+sealed  = [160, 192]
+
+[space.w0]  # one table per parameter; the space is closed (exactly these keys)
+type = "int16"
+min  = -64
+max  = 63
+# w1 .. w5 identical
+
+[space.thr]
+type = "int16"
+min  = 0
+max  = 8191
+
+[chain]
+chain_id       = 10143
+allow_other    = false                         # tools refuse other chains unless BLOCKWISE_ALLOW_OTHER_CHAIN=1
+workers        = 20
+per_generation = 200
+generations    = 10
+fee            = { max_fee_gwei = 400, priority_fee_gwei = 2 }

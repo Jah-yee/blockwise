@@ -1,0 +1,15 @@
+node_modules/
+.env
+.env.*
+!.env.example
+*.key
+keystore/
+.blockwise/
+contracts/out/
+contracts/cache/
+contracts/broadcast/
+dist/
+.DS_Store
+*.log
+runs/*.jsonl
+!runs/.gitkeep
